@@ -1,11 +1,11 @@
 # Mantis MCP Server
 
-[![smithery badge](https://smithery.ai/badge/@kfnzero/mantis-mcp-server)](https://smithery.ai/server/@kfnzero/mantis-mcp-server)
+[![smithery badge](https://smithery.ai/badge/@lukanet/mantis-mcp-server)](https://smithery.ai/server/@lukanet/mantis-mcp-server)
 
 Mantis MCP Server is an MCP (Model Context Protocol) service that integrates with Mantis Bug Tracker. It provides tools to query and analyze Mantis data over the MCP protocol.
 
-<a href="https://glama.ai/mcp/servers/@kfnzero/mantis-mcp-server">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@kfnzero/mantis-mcp-server/badge" alt="Mantis Server MCP server" />
+<a href="https://glama.ai/mcp/servers/@lukanet/mantis-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@lukanet/mantis-mcp-server/badge" alt="Mantis Server MCP server" />
 </a>
 
 ## Features
@@ -31,10 +31,10 @@ Mantis MCP Server is an MCP (Model Context Protocol) service that integrates wit
 
 ### Installing via Smithery
 
-To install Mantis Bug Tracker Integration for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@kfnzero/mantis-mcp-server):
+To install Mantis Bug Tracker Integration for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@lukanet/mantis-mcp-server):
 
 ```bash
-npx -y @smithery/cli install @kfnzero/mantis-mcp-server --client claude
+npx -y @smithery/cli install @lukanet/mantis-mcp-server --client claude
 ```
 
 ### Manual Installation
