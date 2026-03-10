@@ -1,27 +1,27 @@
-# 系統模式
+# System Patterns
 
-## 架構決策
-- 採用RESTful API設計，提供清晰的接口
-- 實作MVC架構分離關注點
-- 使用模組化設計，便於維護和擴展
-- 採用中間件處理認證和日誌
-- 實作緩存機制提高性能
+## Architecture Decisions
+- RESTful API design with clear interfaces
+- MVC-style separation of concerns
+- Modular design for maintenance and extension
+- Middleware for auth and logging
+- Caching for performance
 
-## 設計模式
-- 單例模式: 用於數據庫連接和配置管理
-- 工廠模式: 用於創建Mantis API客戶端
-- 裝飾器模式: 用於API驗證和日誌記錄
-- 策略模式: 用於不同統計算法的實現
-- 觀察者模式: 用於系統事件通知
+## Design Patterns
+- Singleton: database connection and config
+- Factory: Mantis API client creation
+- Decorator: API validation and logging
+- Strategy: different statistics algorithms
+- Observer: system event notification
 
-## 技術債務
-- 需要在後期新增更多的統計與分析功能
-- 可能需要優化大量數據查詢的性能
-- 初期版本缺少完整的單元測試覆蓋
+## Technical Debt
+- Add more statistics and analysis later
+- May need to optimize heavy query performance
+- Initial version lacks full unit test coverage
 
-## 最佳實踐
-- 全面的錯誤處理和日誌記錄
-- 使用環境變數進行配置管理
-- 實作API版本控制
-- 定期進行安全更新
-- 確保代碼遵循SOLID原則 
+## Best Practices
+- Thorough error handling and logging
+- Environment variables for config
+- API versioning
+- Regular security updates
+- Code follows SOLID principles

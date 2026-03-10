@@ -6,28 +6,28 @@ import { createServer } from "./server.js";
 import { log } from "./utils/logger.js";
 
 async function main() {
-  // 輸出環境配置
-  log.info("=== Mantis MCP Server 配置資訊 ===", {
+  // Output environment config
+  log.info("=== Mantis MCP Server config ===", {
     api_url: config.MANTIS_API_URL,
     api_configured: isMantisConfigured(),
     environment: config.NODE_ENV,
     log_level: config.LOG_LEVEL,
     cache_enabled: config.CACHE_ENABLED,
     cache_ttl: config.CACHE_TTL_SECONDS,
-    file_logging: config.ENABLE_FILE_LOGGING ? `啟用 (${config.LOG_DIR})` : '停用'
+    file_logging: config.ENABLE_FILE_LOGGING ? `Enabled (${config.LOG_DIR})` : 'Disabled'
   });
 
   if (!isMantisConfigured()) {
-    log.warn("Mantis API 未完整配置,部分功能可能無法使用");
+    log.warn("Mantis API not fully configured; some features may be unavailable");
   }
 
   const server: McpServer = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log.info("Mantis MCP Server 已在 stdio 上啟動");
+  log.info("Mantis MCP Server started on stdio");
 }
 
 main().catch((error) => {
-  log.error("主程序發生致命錯誤", { error: error.message, stack: error.stack });
+  log.error("Fatal error in main process", { error: error.message, stack: error.stack });
   process.exit(1);
 });

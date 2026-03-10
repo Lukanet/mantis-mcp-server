@@ -2,32 +2,32 @@
 
 [![smithery badge](https://smithery.ai/badge/@kfnzero/mantis-mcp-server)](https://smithery.ai/server/@kfnzero/mantis-mcp-server)
 
-Mantis MCP Server 是一個基於 Model Context Protocol (MCP) 的服務，用於與 Mantis Bug Tracker 系統進行集成。它提供了一系列工具，允許用戶通過 MCP 協議查詢和分析 Mantis 系統中的數據。
+Mantis MCP Server is an MCP (Model Context Protocol) service that integrates with Mantis Bug Tracker. It provides tools to query and analyze Mantis data over the MCP protocol.
 
 <a href="https://glama.ai/mcp/servers/@kfnzero/mantis-mcp-server">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@kfnzero/mantis-mcp-server/badge" alt="Mantis Server MCP server" />
 </a>
 
-## 功能
+## Features
 
-- 問題管理
-  - 獲取問題列表（支持多種過濾條件）
-  - 根據 ID 查詢問題詳情
-- 用戶管理
-  - 根據用戶名稱查詢用戶
-  - 獲取所有用戶列表
-- 專案管理
-  - 獲取專案列表
-- 統計分析
-  - 問題統計（支持多維度分析）
-  - 分派統計（分析問題分派情況）
-- 效能優化
-  - 欄位選擇（減少回傳資料量）
-  - 分頁處理（控制每次返回數量）
-  - 自動資料壓縮（大量資料時自動壓縮）
-- 完整的錯誤處理和日誌記錄
+- **Issue management**
+  - Get issue list (multiple filters)
+  - Get issue details by ID
+- **User management**
+  - Get user by username
+  - Get all users
+- **Project management**
+  - Get project list
+- **Statistics**
+  - Issue statistics (multiple dimensions)
+  - Assignment statistics
+- **Performance**
+  - Field selection (reduce payload)
+  - Pagination
+  - Automatic compression for large responses
+- Error handling and logging
 
-## 安裝
+## Installation
 
 ### Installing via Smithery
 
@@ -42,50 +42,50 @@ npx -y @smithery/cli install @kfnzero/mantis-mcp-server --client claude
 npm install mantis-mcp-server
 ```
 
-## 配置
+## Configuration
 
-1. 在專案根目錄建立 `.env` 文件：
+1. Create a `.env` file in the project root:
 
 ```bash
-# Mantis API 配置
+# Mantis API
 MANTIS_API_URL=https://your-mantis-instance.com/api/rest
 MANTIS_API_KEY=your_api_key_here
 
-# 應用配置
+# Application
 NODE_ENV=development  # development, production, test
 LOG_LEVEL=info       # error, warn, info, debug
 
-# 快取配置
+# Cache
 CACHE_ENABLED=true
-CACHE_TTL_SECONDS=300  # 5分鐘
+CACHE_TTL_SECONDS=300  # 5 minutes
 
-# 日誌配置
+# Logging
 LOG_DIR=logs
 ENABLE_FILE_LOGGING=false
 ```
 
-### MantisBT API Key 獲取方式
+### How to get a MantisBT API Key
 
-1. 登入您的 MantisBT 帳戶
-2. 點擊右上角的用戶名稱，選擇「我的帳戶」
-3. 切換到「API 令牌」標籤
-4. 點擊「創建新令牌」按鈕
-5. 輸入令牌名稱（例如：MCP Server）
-6. 複製生成的 API 令牌，並將其貼入 `.env` 文件的 `MANTIS_API_KEY` 設置中
+1. Log in to your MantisBT account
+2. Click your username (top right) and choose "My Account"
+3. Open the "API Tokens" tab
+4. Click "Create New Token"
+5. Enter a token name (e.g. MCP Server)
+6. Copy the API token and set it as `MANTIS_API_KEY` in `.env`
 
-## MCP 配置
+## MCP Configuration
 
-### 全域安裝
+### Global install
 
-首先，需要全域安裝 mantis-mcp-server：
+Install mantis-mcp-server globally:
 
 ```bash
 npm install -g mantis-mcp-server
 ```
 
-### Windows 配置
+### Windows
 
-在 Windows 系統中，編輯 `%USERPROFILE%\.cursor\mcp.json`（通常在 `C:\Users\你的用戶名\.cursor\mcp.json`），添加以下配置：
+Edit `%USERPROFILE%\.cursor\mcp.json` (e.g. `C:\Users\YourUsername\.cursor\mcp.json`) and add:
 
 ```json
 {
@@ -109,9 +109,9 @@ npm install -g mantis-mcp-server
 }
 ```
 
-### macOS/Linux 配置
+### macOS/Linux
 
-在 macOS 或 Linux 系統中，編輯 `~/.cursor/mcp.json`，添加以下配置：
+Edit `~/.cursor/mcp.json` and add:
 
 ```json
 {
@@ -133,25 +133,25 @@ npm install -g mantis-mcp-server
 }
 ```
 
-> 注意：在 macOS/Linux 中，我們使用 npx 來運行最新版本的 mantis-mcp-server，這樣可以確保始終使用最新版本，不需要全域安裝。
+> On macOS/Linux, using npx runs the latest mantis-mcp-server without a global install.
 
-### 環境變數說明
+### Environment variables
 
-- `MANTIS_API_URL`: 您的 Mantis API URL
-- `MANTIS_API_KEY`: 您的 Mantis API 金鑰
-- `NODE_ENV`: 執行環境，建議設置為 "production"
-- `LOG_LEVEL`: 日誌級別，可選值：error、warn、info、debug
+- `MANTIS_API_URL`: Your Mantis API URL
+- `MANTIS_API_KEY`: Your Mantis API key
+- `NODE_ENV`: Environment; "production" recommended
+- `LOG_LEVEL`: error, warn, info, debug
 
-### 驗證配置
+### Verify configuration
 
-配置完成後，您可以：
+After configuring:
 
-1. 重新載入 Cursor MCP
-2. 開啟命令面板（Windows: Ctrl+Shift+P, Mac: Cmd+Shift+P）
+1. Reload Cursor MCP
+2. Open Command Palette (Windows: Ctrl+Shift+P, Mac: Cmd+Shift+P)
 
-## 在 Cursor 中設定
+## Cursor setup
 
-1. 在 `.vscode/mcp.json` 中添加以下配置：
+1. Add to `.vscode/mcp.json`:
 
 ```json
 {
@@ -165,7 +165,7 @@ npm install -g mantis-mcp-server
 }
 ```
 
-2. 在 `.vscode/launch.json` 中添加以下配置用於除錯：
+2. Add to `.vscode/launch.json` for debugging:
 
 ```json
 {
@@ -197,125 +197,124 @@ npm install -g mantis-mcp-server
 }
 ```
 
-## API 工具說明
+## API Tools
 
-### 1. 獲取問題列表 (get_issues)
+### 1. Get issues (get_issues)
 
-獲取 Mantis 問題列表，可根據多個條件進行過濾。
+Get Mantis issues with optional filters.
 
-**參數：**
-- `projectId` (可選): 專案 ID
-- `statusId` (可選): 狀態 ID
-- `handlerId` (可選): 處理人 ID
-- `reporterId` (可選): 報告者 ID
-- `search` (可選): 搜尋關鍵字
-- `pageSize` (可選, 默認 20): 頁數大小
-- `page` (可選, 默認 0): 分頁起始位置，從1開始
-- `select` (可選): 選擇要返回的欄位，例如：['id', 'summary', 'description']。可用於減少回傳資料量
+**Parameters:**
+- `projectId` (optional): Project ID
+- `statusId` (optional): Status ID
+- `handlerId` (optional): Handler ID
+- `reporterId` (optional): Reporter ID
+- `search` (optional): Search keyword
+- `pageSize` (optional, default 20): Page size
+- `page` (optional, default 0): Pagination offset (from 1)
+- `select` (optional): Fields to return, e.g. `['id', 'summary', 'description']` to reduce payload
 
-### 2. 獲取問題詳情 (get_issue_by_id)
+### 2. Get issue by ID (get_issue_by_id)
 
-根據 ID 獲取 Mantis 問題詳情。
+Get Mantis issue details by ID.
 
-**參數：**
-- `issueId`: 問題 ID
+**Parameters:**
+- `issueId`: Issue ID
 
-### 3. 查詢用戶 (get_user)
+### 3. Get user (get_user)
 
-根據用戶名稱查詢 Mantis 用戶。
+Get Mantis user by username.
 
-**參數：**
-- `username`: 用戶名稱
+**Parameters:**
+- `username`: Username
 
-### 4. 獲取專案列表 (get_projects)
+### 4. Get projects (get_projects)
 
-獲取 Mantis 專案列表。
+Get Mantis project list.
 
-**參數：** 無
+**Parameters:** None
 
-### 5. 獲取問題統計 (get_issue_statistics)
+### 5. Get issue statistics (get_issue_statistics)
 
-獲取 Mantis 問題統計數據，根據不同維度進行分析。
+Get Mantis issue statistics by dimension.
 
-**參數：**
-- `projectId` (可選): 專案 ID
-- `groupBy`: 分組依據，可選值: 'status', 'priority', 'severity', 'handler', 'reporter'
-- `period` (默認 'all'): 時間範圍，可選值: 'all', 'today', 'week', 'month'
+**Parameters:**
+- `projectId` (optional): Project ID
+- `groupBy`: status, priority, severity, handler, reporter
+- `period` (default 'all'): all, today, week, month
 
-### 6. 獲取分派統計 (get_assignment_statistics)
+### 6. Get assignment statistics (get_assignment_statistics)
 
-獲取 Mantis 問題分派統計數據，分析不同用戶的問題分派情況。
+Get Mantis assignment statistics per user.
 
-**參數：**
-- `projectId` (可選): 專案 ID
-- `includeUnassigned` (默認 true): 是否包含未分派問題
-- `statusFilter` (可選): 狀態過濾器，只計算特定狀態的問題
+**Parameters:**
+- `projectId` (optional): Project ID
+- `includeUnassigned` (default true): Include unassigned issues
+- `statusFilter` (optional): Only count issues in these statuses
 
-### 7. 獲取所有用戶 (get_users)
+### 7. Get all users (get_users)
 
-用暴力法獲取所有用戶列表。
+Fetch all users (brute-force).
 
-**參數：** 無
+**Parameters:** None
 
-## 代碼結構
+## Code structure
 
-### 高階函數
-服務使用 `withMantisConfigured` 高階函數來處理共用的檢查邏輯，確保：
-- Mantis API 配置檢查
-- 統一的錯誤處理
-- 標準化的回應格式
-- 自動的日誌記錄
+### Higher-order function
+The server uses `withMantisConfigured` to:
+- Check Mantis API configuration
+- Handle errors consistently
+- Return a standard response shape
+- Log automatically
 
-### 錯誤處理
-完整的錯誤處理機制包括：
-- Mantis API 錯誤處理（包含 HTTP 狀態碼）
-- 通用錯誤處理
-- 結構化的錯誤響應
-- 詳細的錯誤日誌
+### Error handling
+- Mantis API errors (including HTTP status)
+- Generic errors
+- Structured error responses
+- Detailed error logs
 
-## 開發
+## Development
 
 ```bash
-# 安裝依賴
+# Install dependencies
 npm install
 
-# 構建
+# Build
 npm run build
 
-# 開發模式（監視變更）
+# Watch mode
 npm run watch
 
-# 運行
+# Run
 npm start
 ```
 
-## 日誌
+## Logging
 
-如果啟用了檔案日誌（`ENABLE_FILE_LOGGING=true`），日誌文件將保存在：
+When file logging is enabled (`ENABLE_FILE_LOGGING=true`), logs are written to:
 
-- `logs/mantis-mcp-server-combined.log`: 所有級別的日誌
-- `logs/mantis-mcp-server-error.log`: 僅錯誤級別的日誌
+- `logs/mantis-mcp-server-combined.log`: all levels
+- `logs/mantis-mcp-server-error.log`: errors only
 
-日誌文件大小上限為 5MB，最多保留 5 個歷史文件。
+Log files are rotated at 5MB, up to 5 files.
 
-## 許可證
+## License
 
 MIT
 
-## 參考
+## Reference
 
-@https://documenter.getpostman.com/view/29959/7Lt6zkP#c0c24256-341e-4649-95cb-ad7bdc179399 
+@https://documenter.getpostman.com/view/29959/7Lt6zkP#c0c24256-341e-4649-95cb-ad7bdc179399
 
 
-# 發布
+# Publishing
 npm login --registry=https://registry.npmjs.org/
 npm run build
 npm publish --access public --registry=https://registry.npmjs.org/
 
-# 更新版本號
-npm version patch  # 修復版本 0.0.x
-npm version minor  # 次要版本 0.x.0
-npm version major  # 主要版本 x.0.0
+# Version
+npm version patch  # 0.0.x
+npm version minor  # 0.x.0
+npm version major  # x.0.0
 
-# 重新發布
+# Republish
 npm publish

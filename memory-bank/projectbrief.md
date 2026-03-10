@@ -1,25 +1,25 @@
-# 專案簡介
+# Project Brief
 
-## 目標
-開發一個MCP Server，用於串接Mantis工具，提供查詢和統計功能，並支援認證機制。
+## Goals
+Develop an MCP Server to integrate with Mantis, providing query and statistics features with authentication support.
 
-## 主要需求
-- 連接Mantis API並進行整合
-- 支援使用Mantis位置與API Key進行認證
-- 依據問題狀態進行查詢和統計
-- 依據被分派的人員進行查詢和統計
-- 提供簡潔易用的API接口
+## Main Requirements
+- Connect and integrate with Mantis API
+- Support authentication via Mantis URL and API Key
+- Query and statistics by issue status
+- Query and statistics by assignee
+- Provide a simple, easy-to-use API
 
-## 技術要求
-- 伺服器架構設計
-- API整合與認證實作
-- 資料查詢與統計功能
-- 安全機制實作
-- 錯誤處理與日誌
+## Technical Requirements
+- Server architecture design
+- API integration and authentication implementation
+- Data query and statistics
+- Security implementation
+- Error handling and logging
 
-## 成功標準
-- 成功連接Mantis API並通過認證
-- 正確查詢和統計問題狀態資訊
-- 正確查詢和統計問題分派資訊
-- 系統穩定運行
-- 響應時間符合要求 
+## Success Criteria
+- Successfully connect to Mantis API and pass authentication
+- Correctly query and aggregate issue status information
+- Correctly query and aggregate issue assignment information
+- Stable system operation
+- Response time meets requirements

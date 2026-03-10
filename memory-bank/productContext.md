@@ -1,24 +1,24 @@
-# 產品上下文
+# Product Context
 
-## 專案目的
-MCP Server旨在簡化Mantis缺陷追蹤系統的使用流程，通過提供專門的API接口，使團隊能夠更有效地獲取和分析問題數據。這將幫助團隊更好地理解專案狀態，優化工作分配，並提高整體開發效率。
+## Project Purpose
+The MCP Server aims to simplify the use of the Mantis defect tracking system by providing a dedicated API so teams can obtain and analyze issue data more effectively. This helps teams better understand project status, optimize work allocation, and improve overall development efficiency.
 
-## 目標用戶
-- 開發團隊負責人和管理者
-- 專案經理和產品所有者
-- 開發人員和測試人員
-- DevOps團隊成員
+## Target Users
+- Development team leads and managers
+- Project managers and product owners
+- Developers and testers
+- DevOps team members
 
-## 主要功能
-- Mantis API整合與認證
-- 問題狀態查詢與統計
-- 問題分派情況查詢與統計
-- 資料分析與報表功能
-- API接口提供
+## Main Features
+- Mantis API integration and authentication
+- Issue status query and statistics
+- Issue assignment query and statistics
+- Data analysis and reporting
+- API provision
 
-## 預期效益
-- 提高專案狀態的可見性和透明度
-- 減少手動檢查和統計的時間
-- 優化資源分配和工作分派
-- 提供數據支持以改進開發流程
-- 增強團隊協作效率 
+## Expected Benefits
+- Improve visibility and transparency of project status
+- Reduce time spent on manual checks and statistics
+- Optimize resource allocation and work assignment
+- Provide data to improve development processes
+- Enhance team collaboration efficiency

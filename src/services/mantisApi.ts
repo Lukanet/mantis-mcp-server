@@ -111,9 +111,9 @@ export class MantisApi {
         throw error;
       }
       if (error instanceof Error) {
-        throw new MantisApiError(`獲取用戶資訊失敗: ${error.message}`);
+        throw new MantisApiError(`Failed to get user info: ${error.message}`);
       }
-      throw new MantisApiError('獲取用戶資訊失敗');
+      throw new MantisApiError('Failed to get user info');
     }
   }
   private api: AxiosInstance;
@@ -121,8 +121,8 @@ export class MantisApi {
 
   constructor() {
     if (!config.MANTIS_API_URL) {
-      log.error('未設置 Mantis API URL');
-      throw new Error('未設置 Mantis API URL');
+      log.error('Mantis API URL is not set');
+      throw new Error('Mantis API URL is not set');
     }
 
     this.api = axios.create({
@@ -134,18 +134,18 @@ export class MantisApi {
       },
     });
 
-    log.info('已初始化 Mantis API 客戶端', {
+    log.info('Mantis API client initialized', {
       baseURL: config.MANTIS_API_URL,
       timeout: 10000,
       hasApiKey: !!config.MANTIS_API_KEY
     });
 
-    // 添加請求攔截器用於錯誤處理
+    // Add request interceptor for error handling
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response) {
-          const errorMessage = `API 錯誤: ${error.response.status} ${error.response.statusText}`;
+          const errorMessage = `API error: ${error.response.status} ${error.response.statusText}`;
           log.error(errorMessage, {
             status: error.response.status,
             data: error.response.data,
@@ -157,14 +157,14 @@ export class MantisApi {
             error.response.data
           );
         } else if (error.request) {
-          const errorMessage = '未收到 API 響應';
+          const errorMessage = 'No API response received';
           log.error(errorMessage, {
             url: error.config?.url,
             method: error.config?.method
           });
           throw new MantisApiError(errorMessage, 0);
         } else {
-          const errorMessage = `請求錯誤: ${error.message}`;
+          const errorMessage = `Request error: ${error.message}`;
           log.error(errorMessage, {
             url: error.config?.url,
             error: error.message
@@ -175,7 +175,7 @@ export class MantisApi {
     );
   }
 
-  // 使用緩存包裝 API 調用
+  // Wrap API call with cache
   private async cachedRequest<T>(
     key: string,
     requestFn: () => Promise<AxiosResponse<T>>
@@ -184,18 +184,18 @@ export class MantisApi {
       const cachedData = this.cache.get(key);
       const now = Date.now();
       
-      // 如果緩存有效並且未過期
+      // If cache is valid and not expired
       if (
         cachedData &&
         now - cachedData.timestamp < config.CACHE_TTL_SECONDS * 1000
       ) {
-        log.debug('使用緩存數據', { key, age: (now - cachedData.timestamp) / 1000 });
+        log.debug('Using cached data', { key, age: (now - cachedData.timestamp) / 1000 });
         return cachedData.data;
       }
     }
     
-    // 沒有緩存或緩存過期，執行請求
-    log.debug('發送 API 請求', { key });
+    // No cache or cache expired, execute request
+    log.debug('Sending API request', { key });
     const response = await requestFn();
     
     if (config.CACHE_ENABLED) {
@@ -203,17 +203,17 @@ export class MantisApi {
         data: response.data,
         timestamp: Date.now(),
       });
-      log.debug('更新緩存數據', { key });
+      log.debug('Updating cache data', { key });
     }
     
     return response.data;
   }
 
-  // 獲取問題列表
+  // Get issues list
   async getIssues(params: IssueSearchParams = {}): Promise<Issue[]> {
-    log.info('獲取問題列表', { params });
-    
-    // 構建過濾 URL
+    log.info('Fetching issues list', { params });
+
+    // Build filter URL
     let filter = '';
     if (params.projectId) filter += `&project_id=${params.projectId}`;
     if (params.statusId) filter += `&status_id=${params.statusId}`;
@@ -236,9 +236,9 @@ export class MantisApi {
     return response.issues;
   }
 
-  // 獲取單個問題詳情
+  // Get single issue details
   async getIssueById(issueId: number): Promise<Issue> {
-    log.info('獲取問題詳情', { issueId });
+    log.info('Fetching issue details', { issueId });
     
     const cacheKey = `issue-${issueId}`;
     
@@ -247,9 +247,9 @@ export class MantisApi {
     });
   }
 
-  // 獲取當前用戶信息
+  // Get current user info
   async getCurrentUser(): Promise<User> {
-    log.info('獲取當前用戶信息');
+    log.info('Fetching current user info');
     
     const cacheKey = 'current-user';
     
@@ -258,12 +258,12 @@ export class MantisApi {
     });
   }
 
-  // 獲取指定用戶信息
+  // Get user info by ID
   async getUser(userId: number): Promise<User> {
-    log.info('獲取用戶信息', { userId });
-    
+    log.info('Fetching user info', { userId });
+
     if (!userId) {
-      throw new MantisApiError('必須提供用戶 ID');
+      throw new MantisApiError('User ID is required');
     }
     
     const cacheKey = `user-${userId}`;
@@ -273,9 +273,9 @@ export class MantisApi {
     });
   }
 
-  // 獲取項目列表
+  // Get projects list
   async getProjects(): Promise<Project[]> {
-    log.info('獲取項目列表');
+    log.info('Fetching projects list');
     
     const cacheKey = 'projects';
     
@@ -284,9 +284,9 @@ export class MantisApi {
     });
   }
 
-  // 獲取指定專案的所有使用者
+  // Get all users for project
   async getUsersByProjectId(projectId: number): Promise<User[]> {
-    log.info('獲取指定專案的所有使用者', { projectId });
+    log.info('Fetching all users for project', { projectId });
     
     const cacheKey = `users-by-project-${projectId}`;
     
@@ -295,38 +295,38 @@ export class MantisApi {
     });
   }
 
-  // 清除緩存
+  // Clear cache
   clearCache() {
-    log.info('清除 API 緩存');
+    log.info('Clearing API cache');
     this.cache.clear();
   }
 
-  // 新增 issue
+  // Create issue
   async createIssue(issueData: any): Promise<Issue> {
-    log.info('新增 Issue', { issueData });
+    log.info('Creating issue', { issueData });
     const response = await this.api.post('/issues', issueData);
-    this.clearCache(); // 清除快取，因為有新的 issue
+    this.clearCache(); // Clear cache due to new issue
     return response.data.issue;
   }
 
-  // 修改 issue
+  // Update issue
   async updateIssue(issueId: number, updateData: any): Promise<Issue> {
-    log.info('修改 Issue', { issueId, updateData });
+    log.info('Updating issue', { issueId, updateData });
     const response = await this.api.patch(`/issues/${issueId}`, updateData);
-    this.clearCache(); // 清除快取，因為 issue 已更新
+    this.clearCache(); // Clear cache because issue was updated
     return response.data.issue;
   }
 
-  // 新增 issue note
+  // Add issue note
   async addIssueNote(issueId: number, noteData: any): Promise<any> {
-    log.info('新增 Issue Note', { issueId, noteData });
+    log.info('Adding issue note', { issueId, noteData });
     const response = await this.api.post(`/issues/${issueId}/notes`, noteData);
-    this.clearCache(); // 清除快取，因為 issue 已更新
+    this.clearCache(); // Clear cache because issue was updated
     return response.data;
   }
 }
 
-// 創建單例實例
+// Create singleton instance
 export const mantisApi = new MantisApi();
 
 export default mantisApi; 

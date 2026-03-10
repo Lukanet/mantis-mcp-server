@@ -8,17 +8,17 @@ import { promisify } from 'util';
 
 const gzipAsync = promisify(gzip);
 
-// 定義壓縮閾值（單位：字節）
+// Compression threshold in bytes
 const COMPRESSION_THRESHOLD = 1024 * 100; // 100KB
 
-// 定義日誌數據類型
+// Log data type
 interface LogData {
   tool: string;
   [key: string]: any;
   error?: any;
 }
 
-// 高階函數：檢查 Mantis 配置並執行工具邏輯
+// Higher-order function: check Mantis config and run tool logic
 async function withMantisConfigured<T>(
   toolName: string,
   action: () => Promise<T>
@@ -33,7 +33,7 @@ async function withMantisConfigured<T>(
   isError?: boolean | undefined;
 }> {
   try {
-    // 檢查是否已配置 Mantis API
+    // Check if Mantis API is configured
     if (!isMantisConfigured()) {
       return {
         content: [
@@ -41,8 +41,8 @@ async function withMantisConfigured<T>(
             type: "text",
             text: JSON.stringify(
               {
-                error: "Mantis API 尚未配置",
-                message: "請在環境變數中設定 MANTIS_API_URL 和 MANTIS_API_KEY"
+                error: "Mantis API is not configured",
+                message: "Please set MANTIS_API_URL and MANTIS_API_KEY in environment variables"
               },
               null,
               2
@@ -53,7 +53,7 @@ async function withMantisConfigured<T>(
       };
     }
 
-    // 執行工具邏輯
+    // Execute tool logic
     const result = await action();
     return {
       content: [
@@ -64,12 +64,12 @@ async function withMantisConfigured<T>(
       ],
     };
   } catch (error) {
-    // 處理錯誤情況
-    let errorMessage = `執行 ${toolName} 時發生錯誤`;
+    // Handle errors
+    let errorMessage = `Error occurred while executing ${toolName}`;
     let logData: LogData = { tool: toolName };
 
     if (error instanceof MantisApiError) {
-      errorMessage = `Mantis API 錯誤: ${error.message}`;
+      errorMessage = `Mantis API error: ${error.message}`;
       if (error.statusCode) {
         errorMessage += ` (HTTP ${error.statusCode})`;
         logData = { ...logData, statusCode: error.statusCode };
@@ -100,7 +100,7 @@ async function withMantisConfigured<T>(
   }
 }
 
-// 壓縮 JSON 數據
+// Compress JSON data
 async function compressJsonData(data: any): Promise<string> {
   const jsonString = JSON.stringify(data);
   if (jsonString.length < COMPRESSION_THRESHOLD) {
@@ -117,19 +117,19 @@ export function createServer(): McpServer {
     version: "0.1.0",
   });
 
-  // 獲取問題列表
+  // Get issues list
   server.tool(
     "get_issues",
-    "獲取 Mantis 問題列表，可根據多個條件進行過濾，建議查詢時select選擇id,summary,description就好，資訊過多可能導致程式異常",
+    "Get Mantis issues list with multiple filters; recommend using select: id, summary, description to avoid excessive data and possible errors",
     {
-      projectId: z.number().optional().describe("專案 ID"),
-      statusId: z.number().optional().describe("狀態 ID"),
-      handlerId: z.number().optional().describe("處理人 ID"),
-      reporterId: z.number().optional().describe("報告者 ID"),
-      search: z.string().optional().describe("搜尋關鍵字"),
-      pageSize: z.number().optional().default(20).describe("頁數大小"),
-      page: z.number().optional().default(0).describe("分頁起始位置，從1開始"),
-      select: z.array(z.string()).optional().describe("選擇要返回的欄位，例如：['id', 'summary', 'description']"),
+      projectId: z.number().optional().describe("Project ID"),
+      statusId: z.number().optional().describe("Status ID"),
+      handlerId: z.number().optional().describe("Handler ID"),
+      reporterId: z.number().optional().describe("Reporter ID"),
+      search: z.string().optional().describe("Search keyword"),
+      pageSize: z.number().optional().default(20).describe("Page size"),
+      page: z.number().optional().default(0).describe("Pagination offset, starting from 1"),
+      select: z.array(z.string()).optional().describe("Fields to return, e.g. ['id', 'summary', 'description']"),
     },
     async (params) => {
       return withMantisConfigured("get_issues", async () => {
@@ -153,12 +153,12 @@ export function createServer(): McpServer {
     }
   );
 
-  // 根據 ID 獲取問題詳情
+  // Get issue details by ID
   server.tool(
     "get_issue_by_id",
-    "根據 ID 獲取 Mantis 問題詳情",
+    "Get Mantis issue details by ID",
     {
-      issueId: z.number().describe("問題 ID"),
+      issueId: z.number().describe("Issue ID"),
     },
     async ({ issueId }) => {
       return withMantisConfigured("get_issue_by_id", async () => {
@@ -168,12 +168,12 @@ export function createServer(): McpServer {
     }
   );
 
-  // 根據用戶名稱查詢用戶
+  // Get user by username
   server.tool(
     "get_user",
-    "根據用戶名稱查詢 Mantis 用戶",
+    "Get Mantis user by username",
     {
-      username: z.string().describe("用戶名稱")
+      username: z.string().describe("Username")
     },
     async (params) => {
       return withMantisConfigured("get_user", async () => {
@@ -183,10 +183,10 @@ export function createServer(): McpServer {
     }
   );
 
-  // 獲取專案列表
+  // Get projects list
   server.tool(
     "get_projects",
-    "獲取 Mantis 專案列表",
+    "Get Mantis projects list",
     {},
     async () => {
       return withMantisConfigured("get_projects", async () => {
@@ -196,24 +196,24 @@ export function createServer(): McpServer {
     }
   );
 
-  // 獲取問題統計
+  // Get issue statistics
   server.tool(
     "get_issue_statistics",
-    "獲取 Mantis 問題統計數據，根據不同維度進行分析",
+    "Get Mantis issue statistics by different dimensions",
     {
-      projectId: z.number().optional().describe("專案 ID"),
-      groupBy: z.enum(['status', 'priority', 'severity', 'handler', 'reporter']).describe("分組依據"),
-      period: z.enum(['all', 'today', 'week', 'month']).default('all').describe("時間範圍<all-全部, today-今天, week-本週, month-本月>"),
+      projectId: z.number().optional().describe("Project ID"),
+      groupBy: z.enum(['status', 'priority', 'severity', 'handler', 'reporter']).describe("Group by"),
+      period: z.enum(['all', 'today', 'week', 'month']).default('all').describe("Time range: all, today, week, month"),
     },
     async (params) => {
       return withMantisConfigured("get_issue_statistics", async () => {
-        // 從 Mantis API 獲取問題並處理統計
+        // Fetch issues from Mantis API and compute statistics
         const issues = await mantisApi.getIssues({
           projectId: params.projectId,
-          pageSize: 1000 // 獲取大量數據用於統計
+          pageSize: 1000 // Fetch large dataset for statistics
         });
 
-        // 建立統計結果
+        // Build statistics result
         const statistics = {
           total: issues.length,
           groupedBy: params.groupBy,
@@ -221,9 +221,9 @@ export function createServer(): McpServer {
           data: {} as Record<string, number>
         };
 
-        // 根據時間範圍過濾
+        // Filter by time range
         let filteredIssues = issues;
-        log.debug("根據時間範圍過濾issues", { issues, params });
+        log.debug("Filter issues by time range", { issues, params });
         
         const now = new Date();
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -251,15 +251,15 @@ export function createServer(): McpServer {
             break;
           case 'all':
           default:
-            // 保持原有的issues不變
+            // Keep original issues unchanged
             break;
         }
 
         if (!filteredIssues || filteredIssues.length === 0) {
-          return { error: "沒有查詢到任何Issue" };
+          return { error: "No issues found" };
         }
 
-        // 根據分組依據進行統計
+        // Aggregate by group
         filteredIssues.forEach(issue => {
           let key = '';
 
@@ -289,24 +289,24 @@ export function createServer(): McpServer {
     }
   );
 
-  // 獲取分派統計
+  // Get assignment statistics
   server.tool(
     "get_assignment_statistics",
-    "獲取 Mantis 問題分派統計數據，分析不同用戶的問題分派情況",
+    "Get Mantis assignment statistics per user",
     {
-      projectId: z.number().optional().describe("專案 ID"),
-      includeUnassigned: z.boolean().default(true).describe("是否包含未分派問題"),
-      statusFilter: z.array(z.number()).optional().describe("狀態過濾器，只計算特定狀態的問題"),
+      projectId: z.number().optional().describe("Project ID"),
+      includeUnassigned: z.boolean().default(true).describe("Include unassigned issues"),
+      statusFilter: z.array(z.number()).optional().describe("Status filter: only count issues in these statuses"),
     },
     async (params) => {
       return withMantisConfigured("get_assignment_statistics", async () => {
-        // 獲取問題
+        // Get issues
         const issues = await mantisApi.getIssues({
           projectId: params.projectId,
-          pageSize: 1000 // 獲取大量數據用於統計
+          pageSize: 1000 // Fetch large dataset for statistics
         });
 
-        // 過濾問題
+        // Filter issues
         let filteredIssues = issues;
         if (params.statusFilter?.length) {
           filteredIssues = issues.filter(issue =>
@@ -314,7 +314,7 @@ export function createServer(): McpServer {
           );
         }
 
-        // 建立用戶問題統計
+        // Build per-user issue statistics
         const userMap = new Map<number, {
           id: number;
           name: string;
@@ -325,7 +325,7 @@ export function createServer(): McpServer {
           issues: number[];
         }>();
 
-        // 從問題中收集所有處理人ID
+        // Collect all handler IDs from issues
         const handlerIds = new Set<number>();
         filteredIssues.forEach(issue => {
           if (issue.handler?.id) {
@@ -333,7 +333,7 @@ export function createServer(): McpServer {
           }
         });
 
-        // 查詢每個處理人的詳細資訊並初始化統計
+        // Fetch each handler's details and init statistics
         for (const handlerId of handlerIds) {
           const user = await mantisApi.getUser(handlerId);
           userMap.set(user.id, {
@@ -347,11 +347,11 @@ export function createServer(): McpServer {
           });
         }
 
-        // 未分派問題統計
+        // Unassigned issues count
         let unassignedCount = 0;
         let unassignedIssues: number[] = [];
 
-        // 計算統計
+        // Compute statistics
         filteredIssues.forEach(issue => {
           if (issue.handler && issue.handler.id) {
             const userStat = userMap.get(issue.handler.id);
@@ -359,7 +359,7 @@ export function createServer(): McpServer {
               userStat.issueCount++;
               userStat.issues.push(issue.id);
 
-              // 根據狀態判斷是否為關閉狀態
+              // Determine if status is closed
               if (issue.status.name.toLowerCase().includes('closed') ||
                 issue.status.name.toLowerCase().includes('resolved')) {
                 userStat.closedIssues++;
@@ -373,7 +373,7 @@ export function createServer(): McpServer {
           }
         });
 
-        // 構建結果
+        // Build result
         const statistics = {
           totalIssues: filteredIssues.length,
           assignedIssues: filteredIssues.length - unassignedCount,
@@ -386,7 +386,7 @@ export function createServer(): McpServer {
         if (params.includeUnassigned && unassignedCount > 0) {
           statistics.userStatistics.push({
             id: 0,
-            name: "未分派",
+            name: "Unassigned",
             email: "",
             issueCount: unassignedCount,
             openIssues: unassignedCount,
@@ -400,12 +400,12 @@ export function createServer(): McpServer {
     }
   );
 
-  // 獲取指定專案的所有用戶
+  // Get all users for a project
   server.tool(
     "get_users_by_project_id",
-    "獲取指定專案的所有用戶",
+    "Get all users for the given project",
     {
-      projectId: z.number().describe("專案 ID"),
+      projectId: z.number().describe("Project ID"),
     },
     async (params) => {
       return withMantisConfigured("get_users_by_project_id", async () => {
@@ -415,10 +415,10 @@ export function createServer(): McpServer {
     }
   );
 
-  // 獲取所有用戶
+  // Get all users
   server.tool(
     "get_users",
-    "用暴力法強制取得所有用戶",
+    "Force-fetch all users (brute-force)",
     {},
     async () => {
       return withMantisConfigured("get_users", async () => {
@@ -430,7 +430,7 @@ export function createServer(): McpServer {
             const user = await mantisApi.getUser(id);
             users.push(user);
             id++;
-            notFoundCount = 0; // 重置計數器
+            notFoundCount = 0; // Reset counter
           } catch (error) {
             if (error instanceof MantisApiError && error.statusCode === 404) {
               notFoundCount++;
@@ -443,19 +443,19 @@ export function createServer(): McpServer {
     }
   );
 
-  // 新增 issue
+  // Create issue
   server.tool(
     "create_issue",
-    "新增一個 Mantis 問題",
+    "Create a Mantis issue",
     {
-      summary: z.string().describe("問題摘要"),
-      description: z.string().describe("問題詳細描述"),
-      projectId: z.number().describe("專案 ID"),
-      categoryId: z.number().optional().describe("分類 ID"),
-      handlerId: z.number().optional().describe("處理人 ID"),
-      priority: z.string().optional().describe("優先級"),
-      severity: z.string().optional().describe("嚴重性"),
-      additional_information: z.string().optional().describe("附加信息"),
+      summary: z.string().describe("Issue summary"),
+      description: z.string().describe("Issue description"),
+      projectId: z.number().describe("Project ID"),
+      categoryId: z.number().optional().describe("Category ID"),
+      handlerId: z.number().optional().describe("Handler ID"),
+      priority: z.string().optional().describe("Priority"),
+      severity: z.string().optional().describe("Severity"),
+      additional_information: z.string().optional().describe("Additional information"),
     },
     async (params) => {
       return withMantisConfigured("create_issue", async () => {
@@ -463,7 +463,7 @@ export function createServer(): McpServer {
           summary: params.summary,
           description: params.description,
           project: { id: params.projectId },
-          category: { id: params.categoryId || 1 }, // 默認 category
+          category: { id: params.categoryId || 1 }, // Default category
           handler: params.handlerId ? { id: params.handlerId } : undefined,
           priority: params.priority ? { name: params.priority } : undefined,
           severity: params.severity ? { name: params.severity } : undefined,
@@ -475,19 +475,19 @@ export function createServer(): McpServer {
     }
   );
 
-  // 修改 issue
+  // Update issue
   server.tool(
     "update_issue",
-    "修改一個 Mantis 問題",
+    "Update a Mantis issue",
     {
-      issueId: z.number().describe("問題 ID"),
-      summary: z.string().optional().describe("問題摘要"),
-      description: z.string().optional().describe("問題詳細描述"),
-      handlerId: z.number().optional().describe("處理人 ID"),
-      status: z.string().optional().describe("狀態"),
-      resolution: z.string().optional().describe("解決方案"),
-      priority: z.string().optional().describe("優先級"),
-      severity: z.string().optional().describe("嚴重性"),
+      issueId: z.number().describe("Issue ID"),
+      summary: z.string().optional().describe("Issue summary"),
+      description: z.string().optional().describe("Issue description"),
+      handlerId: z.number().optional().describe("Handler ID"),
+      status: z.string().optional().describe("Status"),
+      resolution: z.string().optional().describe("Resolution"),
+      priority: z.string().optional().describe("Priority"),
+      severity: z.string().optional().describe("Severity"),
     },
     async (params) => {
       return withMantisConfigured("update_issue", async () => {
@@ -506,14 +506,14 @@ export function createServer(): McpServer {
     }
   );
 
-  // 新增 issue note
+  // Add issue note
   server.tool(
     "add_issue_note",
-    "為一個 Mantis 問題新增備註",
+    "Add a note to a Mantis issue",
     {
-      issueId: z.number().describe("問題 ID"),
-      text: z.string().describe("備註內容"),
-      view_state: z.string().optional().default("public").describe("可見狀態 (public 或 private)"),
+      issueId: z.number().describe("Issue ID"),
+      text: z.string().describe("Note text"),
+      view_state: z.string().optional().default("public").describe("Visibility (public or private)"),
     },
     async (params) => {
       return withMantisConfigured("add_issue_note", async () => {

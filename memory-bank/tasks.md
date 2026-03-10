@@ -1,53 +1,53 @@
-# 任務追蹤
+# Task Tracking
 
-## 進行中的任務
-- [X] 初始化專案結構和文件
-- [X] 擴展 MCP Server 功能
-  - [X] 修改 get_issues 工具與 Mantis API 整合
-  - [X] 實作認證機制
-  - [X] 實作問題查詢功能
-  - [X] 實作分派查詢功能
-  - [X] 實作統計功能
+## In Progress
+- [X] Initialize project structure and files
+- [X] Extend MCP Server features
+  - [X] Modify get_issues tool and integrate with Mantis API
+  - [X] Implement authentication
+  - [X] Implement issue query
+  - [X] Implement assignment query
+  - [X] Implement statistics
 
-## MCP Server 開發計劃
-### 基礎架構完善
-- [X] 修改現有的 get_issues 工具
-- [X] 添加必要的工具類和輔助函數
-- [X] 實作基本的錯誤處理機制
-- [X] 添加環境變數配置 (dotenv)
+## MCP Server Development Plan
+### Base Architecture
+- [X] Modify existing get_issues tool
+- [X] Add required tool classes and helpers
+- [X] Implement basic error handling
+- [X] Add environment config (dotenv)
 
-### Mantis API 整合
-- [X] 添加 Axios 依賴
-- [X] 建立 API 客戶端類別
-- [X] 實作 Mantis 連接配置
-- [X] 實作基本的 API 調用功能
-- [X] 實作錯誤處理與重試機制
-- [X] 實作請求節流和緩存功能
+### Mantis API Integration
+- [X] Add Axios dependency
+- [X] Create API client class
+- [X] Implement Mantis connection config
+- [X] Implement basic API calls
+- [X] Implement error handling and retry
+- [X] Implement request throttling and cache
 
-### 工具功能擴展
-- [X] 修改 get_issues 工具實現真實查詢
-- [X] 添加 get_issue_by_id 工具
-- [X] 添加 get_users 工具
-- [X] 添加 get_projects 工具
-- [X] 添加 get_issue_statistics 工具
-- [X] 添加 get_assignment_statistics 工具
+### Tool Features
+- [X] Modify get_issues for real queries
+- [X] Add get_issue_by_id
+- [X] Add get_users
+- [X] Add get_projects
+- [X] Add get_issue_statistics
+- [X] Add get_assignment_statistics
 
-### 認證機制
-- [X] 添加認證配置模型
-- [X] 實作 API Key 驗證
-- [X] 設計 Mantis 整合認證
-- [X] 添加認證錯誤處理
+### Authentication
+- [X] Add auth config model
+- [X] Implement API Key validation
+- [X] Design Mantis integration auth
+- [X] Add auth error handling
 
-### 測試與文檔
-- [ ] 添加單元測試
-- [ ] 添加整合測試
-- [X] 更新 README 文檔
-- [X] 添加使用說明文檔
+### Testing and Docs
+- [ ] Add unit tests
+- [ ] Add integration tests
+- [X] Update README
+- [X] Add usage docs
 
-## 已完成的任務
-- [X] 初始化專案結構和文件
-- [X] 設計系統架構
-- [X] 實作 Mantis API 整合
-- [X] 實作問題查詢功能
-- [X] 實作認證機制
-- [X] 實作統計功能 
+## Completed
+- [X] Initialize project structure and files
+- [X] Design system architecture
+- [X] Implement Mantis API integration
+- [X] Implement issue query
+- [X] Implement authentication
+- [X] Implement statistics

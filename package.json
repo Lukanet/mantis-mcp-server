@@ -1,5 +1,5 @@
 {
-  "name": "mantis-mcp-server",
+  "name": "@lukanet/mantis-mcp-server",
   "version": "0.4.8",
   "type": "module",
   "bin": {
@@ -20,9 +20,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kfnzero/mantis-mcp-server.git"
+    "url": "git+https://github.com/lukanet/mantis-mcp-server.git"
   },
-  "author": "kevin.lin",
+  "author": "Lukanet Dev Team",
   "license": "MIT",
   "description": "Mantis MCP Server",
   "dependencies": {
@@ -35,6 +35,6 @@
   "devDependencies": {
     "@types/node": "^22.13.10",
     "shx": "^0.3.4",
-    "typescript": "^5.8.2"
+    "typescript": "^5.9.3"
   }
 }
