@@ -127,7 +127,7 @@ export class MantisApi {
 
     this.api = axios.create({
       baseURL: config.MANTIS_API_URL,
-      timeout: 10000,
+      timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
         ...(config.MANTIS_API_KEY && { 'Authorization': config.MANTIS_API_KEY }),
@@ -219,8 +219,8 @@ export class MantisApi {
     if (params.statusId) filter += `&status_id=${params.statusId}`;
     if (params.handlerId) filter += `&handler_id=${params.handlerId}`;
     if (params.reporterId) filter += `&reporter_id=${params.reporterId}`;
-    if (params.priority) filter += `&priority=${params.priority}`;
-    if (params.severity) filter += `&severity=${params.severity}`;
+    if (params.priority) filter += `&priority_id=${params.priority}`;
+    if (params.severity) filter += `&severity_id=${params.severity}`;
     if (params.search) filter += `&search=${encodeURIComponent(params.search)}`;
     if (params.select?.length) filter += `&select=${params.select.join(',')}`;
     

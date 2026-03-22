@@ -120,13 +120,13 @@ export function createServer(): McpServer {
   // Get issues list
   server.tool(
     "get_issues",
-    "Get Mantis issues list with multiple filters; recommend using select: id, summary, description to avoid excessive data and possible errors",
+    "Get Mantis issues list with inline filters; recommend using select: id, summary, description to avoid excessive data and possible errors. All filter params support server-side filtering.",
     {
       projectId: z.number().optional().describe("Project ID"),
-      statusId: z.number().optional().describe("Status ID"),
-      handlerId: z.number().optional().describe("Handler ID"),
-      reporterId: z.number().optional().describe("Reporter ID"),
-      search: z.string().optional().describe("Search keyword"),
+      statusId: z.number().optional().describe("Status ID (e.g. 10=new, 50=assigned, 80=resolved, 90=closed). Supports comma-separated for multiple: '10,50'"),
+      handlerId: z.number().optional().describe("Handler (assignee) user ID"),
+      reporterId: z.number().optional().describe("Reporter user ID"),
+      search: z.string().optional().describe("Free-text search across issue summary, description, notes"),
       pageSize: z.number().optional().default(20).describe("Page size"),
       page: z.number().optional().default(0).describe("Pagination offset, starting from 1"),
       select: z.array(z.string()).optional().describe("Fields to return, e.g. ['id', 'summary', 'description']"),
