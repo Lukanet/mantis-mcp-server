@@ -9,6 +9,37 @@ import { log } from '../utils/logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * HTTP 301 redirects convert POST to GET, which breaks Mantis write APIs (notes, create, update).
+ * Internal .lan hosts often have no HTTPS; public hosts should use https:// directly.
+ */
+export function normalizeMantisApiUrl(url: string): string {
+  if (!url.startsWith('http://')) {
+    return url;
+  }
+
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return url;
+  }
+
+  if (hostname.endsWith('.lan') || hostname === 'localhost') {
+    log.warn('MANTIS_API_URL uses HTTP on an internal host; ensure the server does not redirect to HTTPS', {
+      hostname,
+    });
+    return url;
+  }
+
+  const httpsUrl = url.replace(/^http:\/\//i, 'https://');
+  log.warn('MANTIS_API_URL upgraded from HTTP to HTTPS (write operations fail after HTTP 301 redirect)', {
+    from: url,
+    to: httpsUrl,
+  });
+  return httpsUrl;
+}
+
 // Define config schema
 const ConfigSchema = z.object({
   // Mantis API config
@@ -40,8 +71,9 @@ try {
 // Parse environment variables
 const parseConfig = () => {
   try {
+    const rawApiUrl = process.env.MANTIS_API_URL;
     const parsedConfig = ConfigSchema.parse({
-      MANTIS_API_URL: process.env.MANTIS_API_URL,
+      MANTIS_API_URL: rawApiUrl ? normalizeMantisApiUrl(rawApiUrl) : rawApiUrl,
       MANTIS_API_KEY: process.env.MANTIS_API_KEY,
       NODE_ENV: process.env.NODE_ENV,
       LOG_LEVEL: process.env.LOG_LEVEL,

@@ -42,15 +42,37 @@ export interface Issue {
 
 export interface IssueSearchParams {
   projectId?: number;
-  statusId?: number;
+  statusId?: number | string;
   handlerId?: number;
   reporterId?: number;
   priority?: number;
   severity?: number;
+  category?: string;
+  resolutionId?: number;
+  createdAfter?: string;
+  createdBefore?: string;
+  updatedAfter?: string;
+  updatedBefore?: string;
   pageSize?: number;
   page?: number;
   search?: string;
   select?: string[];
+  countOnly?: boolean;
+  idsOnly?: boolean;
+}
+
+/** Envelope returned by GET /issues. `issues` is absent when count_only is used. */
+export interface IssueListResult {
+  issues?: Issue[];
+  total_count?: number;
+  page_count?: number;
+  warnings?: string[];
+}
+
+export interface BulkResult {
+  results: Array<{ id: number; status: string; [key: string]: any }>;
+  ok_count: number;
+  error_count: number;
 }
 
 export interface User {
@@ -210,30 +232,49 @@ export class MantisApi {
   }
 
   // Get issues list
-  async getIssues(params: IssueSearchParams = {}): Promise<Issue[]> {
-    log.info('Fetching issues list', { params });
+  async getIssues(params: IssueSearchParams = {}): Promise<IssueListResult> {
+    // Only the shape of the query is logged: values such as `search` are user
+    // content and must not end up in the log.
+    log.info('Fetching issues list', { params: Object.keys(params) });
 
-    // Build filter URL
-    let filter = '';
-    if (params.projectId) filter += `&project_id=${params.projectId}`;
-    if (params.statusId) filter += `&status_id=${params.statusId}`;
-    if (params.handlerId) filter += `&handler_id=${params.handlerId}`;
-    if (params.reporterId) filter += `&reporter_id=${params.reporterId}`;
-    if (params.priority) filter += `&priority_id=${params.priority}`;
-    if (params.severity) filter += `&severity_id=${params.severity}`;
-    if (params.search) filter += `&search=${encodeURIComponent(params.search)}`;
-    if (params.select?.length) filter += `&select=${params.select.join(',')}`;
-    
+    const query = new URLSearchParams();
     const pageSize = params.pageSize || 50;
-    const page = params.page ||1;
-    
-    const cacheKey = `issues-${filter}-${page}-${pageSize}`;
-    
-    const response = await this.cachedRequest<{issues: Issue[]}>(cacheKey, () => {
-      return this.api.get(`/issues?page=${page}&page_size=${pageSize}${filter}`);
-    });
+    const page = params.page || 1;
 
-    return response.issues;
+    if (!params.countOnly) {
+      query.set('page', String(page));
+      query.set('page_size', String(pageSize));
+    }
+
+    if (params.projectId) query.set('project_id', String(params.projectId));
+    if (params.statusId) query.set('status_id', String(params.statusId));
+    if (params.handlerId) query.set('handler_id', String(params.handlerId));
+    if (params.reporterId) query.set('reporter_id', String(params.reporterId));
+    if (params.priority) query.set('priority_id', String(params.priority));
+    if (params.severity) query.set('severity_id', String(params.severity));
+    if (params.resolutionId) query.set('resolution_id', String(params.resolutionId));
+    if (params.category) query.set('category', params.category);
+    if (params.createdAfter) query.set('created_after', params.createdAfter);
+    if (params.createdBefore) query.set('created_before', params.createdBefore);
+    if (params.updatedAfter) query.set('updated_after', params.updatedAfter);
+    if (params.updatedBefore) query.set('updated_before', params.updatedBefore);
+    if (params.search) query.set('search', params.search);
+
+    // count_only and fields=id are mutually exclusive shortcuts; count_only wins.
+    if (params.countOnly) {
+      query.set('count_only', '1');
+    } else if (params.idsOnly) {
+      query.set('fields', 'id');
+    } else if (params.select?.length) {
+      query.set('select', params.select.join(','));
+    }
+
+    const queryString = query.toString();
+    const cacheKey = `issues-${queryString}`;
+
+    return this.cachedRequest<IssueListResult>(cacheKey, () => {
+      return this.api.get(`/issues?${queryString}`);
+    });
   }
 
   // Get single issue details
@@ -314,14 +355,66 @@ export class MantisApi {
     log.info('Updating issue', { issueId, updateData });
     const response = await this.api.patch(`/issues/${issueId}`, updateData);
     this.clearCache(); // Clear cache because issue was updated
-    return response.data.issue;
+    // PATCH /issues/{id} answers with {"issues":[...]}, unlike POST /issues which answers with {"issue":...}.
+    return response.data.issue ?? response.data.issues?.[0];
   }
 
   // Add issue note
   async addIssueNote(issueId: number, noteData: any): Promise<any> {
-    log.info('Adding issue note', { issueId, noteData });
+    log.info('Adding issue note', { issueId, fields: Object.keys(noteData || {}) });
     const response = await this.api.post(`/issues/${issueId}/notes`, noteData);
     this.clearCache(); // Clear cache because issue was updated
+    return response.data;
+  }
+
+  // Link two issues
+  async addRelationship(issueId: number, targetIssueId: number, type: string): Promise<any> {
+    log.info('Adding issue relationship', { issueId, targetIssueId, type });
+    const response = await this.api.post(`/issues/${issueId}/relationships`, {
+      issue: { id: targetIssueId },
+      type: { name: type },
+    });
+    this.clearCache();
+    return response.data;
+  }
+
+  // Remove a link between two issues
+  async deleteRelationship(issueId: number, relationshipId: number): Promise<any> {
+    log.info('Deleting issue relationship', { issueId, relationshipId });
+    const response = await this.api.delete(`/issues/${issueId}/relationships/${relationshipId}`);
+    this.clearCache();
+    return response.data;
+  }
+
+  // Apply the same field update to many issues in one request
+  async bulkUpdateIssues(ids: number[], issue: any, suppressNotifications = false): Promise<BulkResult> {
+    log.info('Bulk updating issues', {
+      count: ids.length,
+      fields: Object.keys(issue || {}),
+      suppressNotifications,
+    });
+    const response = await this.api.patch('/issues/bulk', {
+      ids,
+      issue,
+      suppress_notifications: suppressNotifications,
+    });
+    this.clearCache();
+    return response.data;
+  }
+
+  // Add the same note to many issues in one request
+  async bulkAddNote(ids: number[], note: any, suppressNotifications = false): Promise<BulkResult> {
+    log.info('Bulk adding note', {
+      count: ids.length,
+      textLength: typeof note?.text === 'string' ? note.text.length : 0,
+      suppressNotifications,
+    });
+    const response = await this.api.post('/issues/bulk/notes', {
+      ids,
+      note,
+      suppress_notifications: suppressNotifications,
+    });
+    this.clearCache();
     return response.data;
   }
 }
