@@ -163,9 +163,13 @@ export function createServer(): McpServer {
       category: z.string().optional().describe("Category NAME as shown in get_projects (not the id), e.g. 'Грешка'"),
       resolutionId: z.number().optional().describe(RESOLUTION_IDS),
       search: z.string().optional().describe(
-        "Free-text over summary, description and notes. Multiple words are ANDed: 'print error' matches only " +
-        "issues containing both words (in any order, anywhere in the text), not either one. " +
-        "There is no OR, no phrase quoting and no wildcard - run separate calls and merge for OR."
+        "Free-text over summary, description and notes, matched with SQL LIKE - correct but slow (tens of " +
+        "seconds on the whole tracker). Multiple words are ANDed: 'print error' matches only issues containing " +
+        "both words (in any order, anywhere in the text), not either one. There is no OR, no phrase quoting, " +
+        "no wildcard and no relevance ranking. PREFER search_issues for any text search: it is the same corpus " +
+        "through a full-text index, ~50x faster, ranked, and it understands phrases, fields and boolean operators. " +
+        "Use this one only to combine a text fragment with a filter search_issues does not offer (e.g. reporter_id), " +
+        "or when you need whole issue objects back via select."
       ),
       createdAfter: z.string().optional().describe("Only issues created on/after this date, 'YYYY-MM-DD'. Can be used alone."),
       createdBefore: z.string().optional().describe("Only issues created before this date, 'YYYY-MM-DD'. Can be used alone."),
@@ -211,6 +215,64 @@ export function createServer(): McpServer {
           warnings: result.warnings,
           hint: "Response was too large and had to be gzipped. Re-run with select or idsOnly instead."
         });
+      });
+    }
+  );
+
+  // Full-text search (Sphinx)
+  server.tool(
+    "search_issues",
+    "Full-text search over issue titles, descriptions, notes and custom fields, ranked by relevance. " +
+    "This is the fast way to find issues by what they SAY: the whole tracker is answered from a Sphinx index in " +
+    "hundredths of a second, where get_issues with `search` runs a SQL LIKE and takes tens of seconds. " +
+    "Prefer it for every 'find issues about X' question; fall back to get_issues only for pure metadata queries " +
+    "(status/handler/date with no text) or filters this tool lacks. " +
+    "QUERY SYNTAX (Sphinx extended): words are ANDed by default; \"exact phrase\" in double quotes; " +
+    "field-scoped search with @title, @content, @custom_fields, @category_name, @username, @project_name; " +
+    "`a | b` for OR and `-word` to exclude. Example: '@title фактура | сметка -тест'. " +
+    "@custom_fields searches the client name attached to the issue, which is the quickest way to pull up " +
+    "everything reported for one customer, e.g. '@custom_fields Вълшебна'. " +
+    "RETURNS: summary rows (id, summary, status, project, handler, client, last note excerpt), not full issues - " +
+    "follow up with get_issue_by_id for notes and relationships. Also returns total_count and a sphinx block; " +
+    "when sphinx.truncated is true the daemon scored more documents (sphinx.total_found) than it returned, " +
+    "so narrow the query instead of paging. " +
+    "CANNOT: match substrings inside a word, filter by reporter, or return arbitrary issue fields.",
+    {
+      q: z.string().describe(
+        "Full-text query in Sphinx extended syntax - see the syntax notes above. Required and must not be empty."
+      ),
+      projectId: z.union([z.number(), z.string()]).optional().describe(
+        "Project ID, or a comma-separated list. Omit to search every project the token can see; " +
+        "projects the user has no access to are dropped, never returned."
+      ),
+      statusId: z.union([z.number(), z.string()]).optional().describe(
+        STATUS_IDS + " Comma-separated string for several at once: '10,50'."
+      ),
+      handlerId: z.union([z.number(), z.string()]).optional().describe("Handler (assignee) user ID, or a comma-separated list."),
+      category: z.string().optional().describe("Category NAME as shown in get_projects, or a comma-separated list."),
+      tagId: z.union([z.number(), z.string()]).optional().describe("Tag ID, or a comma-separated list."),
+      clientName: z.string().optional().describe(
+        "Exact value of the client custom field. For a partial or fuzzy client match use '@custom_fields <name>' in q instead."
+      ),
+      clientId: z.string().optional().describe("Exact client ID custom field value."),
+      dateFrom: z.string().optional().describe("Lower bound for the date selected by dateType, 'YYYY-MM-DD'."),
+      dateTo: z.string().optional().describe("Upper bound for the date selected by dateType, 'YYYY-MM-DD' (inclusive)."),
+      dateType: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional().describe(
+        "Which date dateFrom/dateTo apply to: 1=created (default), 2=last updated, 3=note date."
+      ),
+      lastUpdatedFrom: z.string().optional().describe("Only issues last modified on/after this date, 'YYYY-MM-DD'."),
+      lastUpdatedTo: z.string().optional().describe("Only issues last modified on/before this date, 'YYYY-MM-DD'."),
+      sortBy: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional().describe(
+        "1=status then last update, 2=status then priority then last update (default), 3=full-text relevance. " +
+        "Use 3 when the question is 'which issue is most about X'."
+      ),
+      page: z.number().optional().default(1).describe("Page number, starting at 1"),
+      pageSize: z.number().optional().default(25).describe("Hits per page, capped at 1000 by the server."),
+    },
+    async (params) => {
+      return withMantisConfigured("search_issues", async () => {
+        const result = await mantisApi.searchIssues(params);
+        return JSON.stringify(result, null, 2);
       });
     }
   );

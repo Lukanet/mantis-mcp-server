@@ -69,6 +69,58 @@ export interface IssueListResult {
   warnings?: string[];
 }
 
+export interface FullTextSearchParams {
+  q: string;
+  projectId?: number | string;
+  statusId?: number | string;
+  handlerId?: number | string;
+  category?: string;
+  tagId?: number | string;
+  clientName?: string;
+  clientId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  dateType?: number;
+  lastUpdatedFrom?: string;
+  lastUpdatedTo?: string;
+  sortBy?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Row returned by the full-text search endpoint - a summary, not a full issue. */
+export interface SearchHit {
+  id: number;
+  summary: string;
+  status: number;
+  priority: number;
+  resolution: number;
+  project_id: number;
+  project_name: string;
+  category_name: string | null;
+  handler: string | null;
+  handler_id: number;
+  reporter: string | null;
+  client_name: string | null;
+  client_id: string | null;
+  notes_count: number;
+  date_submitted: string;
+  last_updated: string;
+  last_note: { user: string; text: string; date: string | null } | null;
+}
+
+export interface FullTextSearchResult {
+  issues: SearchHit[];
+  total_count: number;
+  sphinx: {
+    time: string | number;
+    total_found: string | number;
+    matches: number;
+    truncated: boolean;
+    words: Record<string, { docs: string | number; hits: string | number }>;
+  } | null;
+}
+
 export interface BulkResult {
   results: Array<{ id: number; status: string; [key: string]: any }>;
   ok_count: number;
@@ -275,6 +327,46 @@ export class MantisApi {
     return this.cachedRequest<IssueListResult>(cacheKey, () => {
       return this.api.get(`/issues?${queryString}`);
     });
+  }
+
+  // Full-text search through the Sphinx-backed plugin endpoint
+  async searchIssues(params: FullTextSearchParams): Promise<FullTextSearchResult> {
+    // Only the shape of the query is logged; `q` is user content.
+    log.info('Full-text issue search', { params: Object.keys(params) });
+
+    const query = new URLSearchParams();
+    query.set('q', params.q);
+    query.set('page', String(params.page || 1));
+    query.set('page_size', String(params.pageSize || 25));
+
+    if (params.projectId) query.set('project_id', String(params.projectId));
+    if (params.statusId) query.set('status_id', String(params.statusId));
+    if (params.handlerId) query.set('handler_id', String(params.handlerId));
+    if (params.category) query.set('category', params.category);
+    if (params.tagId) query.set('tag_id', String(params.tagId));
+    if (params.clientName) query.set('client_name', params.clientName);
+    if (params.clientId) query.set('client_id', params.clientId);
+    if (params.dateFrom) query.set('date_from', params.dateFrom);
+    if (params.dateTo) query.set('date_to', params.dateTo);
+    if (params.dateType) query.set('date_type', String(params.dateType));
+    if (params.lastUpdatedFrom) query.set('last_updated_from', params.lastUpdatedFrom);
+    if (params.lastUpdatedTo) query.set('last_updated_to', params.lastUpdatedTo);
+    if (params.sortBy) query.set('sort_by', String(params.sortBy));
+
+    const queryString = query.toString();
+
+    try {
+      return await this.cachedRequest<FullTextSearchResult>(`search-${queryString}`, () => {
+        return this.api.get(`/plugins/BarsySupport/search?${queryString}`);
+      });
+    } catch (error) {
+      // The endpoint explains itself in the body (bad expression, Sphinx down);
+      // the bare status line would hide that.
+      if (error instanceof MantisApiError && error.response?.message) {
+        throw new MantisApiError(error.response.message, error.statusCode, error.response);
+      }
+      throw error;
+    }
   }
 
   // Get single issue details
