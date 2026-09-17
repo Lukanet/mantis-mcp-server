@@ -10,10 +10,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * HTTP 301 redirects convert POST to GET, which breaks Mantis write APIs (notes, create, update).
- * Internal .lan hosts often have no HTTPS; public hosts should use https:// directly.
+ * A HTTP 301 redirect turns a POST into a GET, which silently breaks the Mantis write
+ * APIs (notes, create, update). A server reachable only over HTTPS therefore has to be
+ * configured as https:// from the start.
+ *
+ * Rewriting the URL on the caller's behalf is opt-in: an internal host may legitimately
+ * be plain HTTP with no TLS listener at all, and upgrading it would take the server
+ * offline for a reason that is only visible in the log. Set MANTIS_FORCE_HTTPS=1 to
+ * enable the rewrite; otherwise the URL is used as given and a warning is logged.
  */
-export function normalizeMantisApiUrl(url: string): string {
+export function normalizeMantisApiUrl(url: string, forceHttps = false): string {
   if (!url.startsWith('http://')) {
     return url;
   }
@@ -25,15 +31,18 @@ export function normalizeMantisApiUrl(url: string): string {
     return url;
   }
 
-  if (hostname.endsWith('.lan') || hostname === 'localhost') {
-    log.warn('MANTIS_API_URL uses HTTP on an internal host; ensure the server does not redirect to HTTPS', {
-      hostname,
-    });
+  if (!forceHttps) {
+    log.warn(
+      'MANTIS_API_URL uses plain HTTP. If the server redirects to HTTPS, write operations ' +
+      'will fail silently because a 301 turns POST into GET. Configure https:// directly, ' +
+      'or set MANTIS_FORCE_HTTPS=1 to have this URL upgraded automatically.',
+      { hostname }
+    );
     return url;
   }
 
   const httpsUrl = url.replace(/^http:\/\//i, 'https://');
-  log.warn('MANTIS_API_URL upgraded from HTTP to HTTPS (write operations fail after HTTP 301 redirect)', {
+  log.warn('MANTIS_API_URL upgraded from HTTP to HTTPS (MANTIS_FORCE_HTTPS is set)', {
     from: url,
     to: httpsUrl,
   });
@@ -73,7 +82,9 @@ const parseConfig = () => {
   try {
     const rawApiUrl = process.env.MANTIS_API_URL;
     const parsedConfig = ConfigSchema.parse({
-      MANTIS_API_URL: rawApiUrl ? normalizeMantisApiUrl(rawApiUrl) : rawApiUrl,
+      MANTIS_API_URL: rawApiUrl
+        ? normalizeMantisApiUrl(rawApiUrl, process.env.MANTIS_FORCE_HTTPS === '1')
+        : rawApiUrl,
       MANTIS_API_KEY: process.env.MANTIS_API_KEY,
       NODE_ENV: process.env.NODE_ENV,
       LOG_LEVEL: process.env.LOG_LEVEL,
