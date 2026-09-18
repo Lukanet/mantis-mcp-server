@@ -306,15 +306,66 @@ MIT
 @https://documenter.getpostman.com/view/29959/7Lt6zkP#c0c24256-341e-4649-95cb-ad7bdc179399
 
 
-# Publishing
-npm login --registry=https://registry.npmjs.org/
-npm run build
-npm publish --access public --registry=https://registry.npmjs.org/
+## Publishing
 
-# Version
-npm version patch  # 0.0.x
-npm version minor  # 0.x.0
-npm version major  # x.0.0
+Two ways to release, and which one you should use depends on the date.
 
-# Republish
-npm publish
+### Trusted publishing from CI (preferred)
+
+`.github/workflows/publish.yml` publishes when a `v*` tag is pushed. It
+authenticates over OIDC with a token GitHub issues for that single workflow
+run, so there is no npm token stored anywhere.
+
+One-time setup on npmjs.com: package -> Settings -> Trusted publishers ->
+GitHub Actions, repository `lukanet/mantis-mcp-server`, workflow `publish.yml`.
+
+```bash
+npm version minor          # bumps package.json, commits, tags
+git push && git push --tags
+```
+
+The workflow refuses to publish if the tag and `package.json` disagree.
+`workflow_dispatch` runs it with `dry_run` on by default, which builds and
+packs without publishing.
+
+### From a workstation
+
+```bash
+bash scripts/publish.sh                # checks and pack preview, publishes nothing
+bash scripts/publish.sh --bump minor   # bump first
+bash scripts/publish.sh --publish      # publish, after typing the version back
+```
+
+The script checks the branch, a clean tree, the npm login, that the version is
+not already taken, rebuilds `dist/` from scratch and lists the tarball contents
+before anything is sent. `npm publish` does not build on its own here - there is
+no `prepublishOnly` hook - so a forgotten build would ship the previous `dist/`
+under a new version number.
+
+Authentication on a machine without a browser: the default `npm login` opens a
+web flow that cannot complete on a headless VM. Put a granular access token in
+your home directory instead, never in the project:
+
+```bash
+printf '//registry.npmjs.org/:_authToken=%s\n' 'npm_...' >> ~/.npmrc
+chmod 600 ~/.npmrc
+```
+
+`npm login --auth-type=legacy` also works and prompts for credentials and an
+OTP in the terminal.
+
+### Why CI is the way forward
+
+Granular access tokens created with "bypass 2FA" were restricted in August 2026
+and lose the ability to publish directly around January 2027; after that they
+can only stage a publish for a human to approve with 2FA. A token without that
+option keeps working and will ask for an OTP on every publish. Trusted
+publishing avoids the question entirely, because nothing long-lived exists to
+expire or leak.
+
+### Versioning
+
+`npm version patch|minor|major` bumps, commits and tags in one step. Add
+`--no-git-tag-version` to bump the file only. A published version can never be
+reused and `npm unpublish` is limited to 72 hours, so the version number is the
+one decision that cannot be taken back.

@@ -136,3 +136,6 @@ dist
 .pnp.*
 pnpm-lock.yaml
 package-lock.json
+
+# npm credentials - never commit
+.npmrc
