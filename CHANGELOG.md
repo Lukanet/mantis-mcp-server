@@ -1,5 +1,22 @@
 # 更新日誌
 
+## [0.6.0] - 2026-09-21
+
+### Added
+- `bulk_add_note` accepts `notes`, a text per issue, next to the existing shared
+  `text`. A mass close carries a different reason on every issue; a shared note
+  throws exactly that away.
+- `tag` on both bulk tools attaches one tag to every issue touched, so a sweep can
+  be reviewed - or undone - with a single filter instead of a search through note texts.
+- `dryRun` on both bulk tools reports what would happen and writes nothing.
+
+### Changed
+- Both bulk tools now accept any number of ids and split the batch into requests of
+  100 themselves. The caller no longer does that arithmetic.
+- `suppressNotifications` is now required rather than defaulting to false. Left off,
+  a batch of a few hundred issues mails every reporter, handler and monitor of every
+  one of them - measured at four e-mails per note.
+
 ## [0.4.0] - 2024-03-29
 
 ### 改進

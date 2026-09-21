@@ -754,20 +754,30 @@ export function createServer(): McpServer {
   // Bulk field update
   server.tool(
     "bulk_update_issues",
-    `Apply the same field change to up to ${BULK_MAX_ISSUES} issues in ONE request. ` +
-    "Much cheaper than looping update_issue, and suppressNotifications avoids a mail storm on big batches. " +
+    "Apply the same field change to any number of issues. " +
+    `The batch is split into requests of ${BULK_MAX_ISSUES} automatically, so pass all the ids you have. ` +
     "Returns per-issue ok/error plus counts - always check error_count, a partial failure is normal. " +
-    "NOT atomic: if the request is interrupted the issues already processed stay changed. " +
+    "NOT atomic: if the run is interrupted the issues already processed stay changed. " +
+    "Set dryRun first to see what would change, and tag the batch so it can be undone with one filter. " +
     "Get the ids from get_issues with idsOnly. " + STATUS_IDS,
     {
-      issueIds: z.array(z.number()).max(BULK_MAX_ISSUES).describe(`Issue IDs, max ${BULK_MAX_ISSUES} per call`),
+      issueIds: z.array(z.number()).describe("Issue IDs, any number - chunking is handled for you"),
       status: z.enum(STATUS_NAMES).optional().describe("New status name, e.g. 'closed'"),
       resolution: z.enum(RESOLUTION_NAMES).optional().describe("New resolution name, e.g. 'fixed'"),
       handlerId: z.number().optional().describe("New handler user ID"),
       priority: z.string().optional().describe("New priority name"),
       severity: z.string().optional().describe("New severity name"),
-      suppressNotifications: z.boolean().optional().default(false).describe(
-        "Do not send e-mail for these changes. Recommended for large batches."
+      suppressNotifications: z.boolean().describe(
+        "Required. false mails every reporter, handler and monitor of every issue - " +
+        "several thousand e-mails on a batch of a few hundred. Use true unless the people " +
+        "involved genuinely need to hear about this change."
+      ),
+      tag: z.string().optional().describe(
+        "Tag to attach to every issue touched, e.g. 'auto-close-2026-09-18'. " +
+        "Created if it does not exist. This is what makes the batch reversible."
+      ),
+      dryRun: z.boolean().optional().default(false).describe(
+        "Report what would change and apply nothing."
       ),
     },
     async (params) => {
@@ -779,11 +789,11 @@ export function createServer(): McpServer {
           priority: params.priority ? { name: params.priority } : undefined,
           severity: params.severity ? { name: params.severity } : undefined,
         };
-        const result = await mantisApi.bulkUpdateIssues(
-          params.issueIds,
-          issue,
-          params.suppressNotifications
-        );
+        const result = await mantisApi.bulkUpdateIssues(params.issueIds, issue, {
+          suppressNotifications: params.suppressNotifications,
+          tag: params.tag,
+          dryRun: params.dryRun,
+        });
         return JSON.stringify(result, null, 2);
       });
     }
@@ -792,26 +802,60 @@ export function createServer(): McpServer {
   // Bulk note
   server.tool(
     "bulk_add_note",
-    `Add the same note to up to ${BULK_MAX_ISSUES} issues in ONE request. ` +
-    "Much cheaper than looping add_issue_note. Returns per-issue ok/error plus counts - check error_count. " +
-    "NOT atomic: if the request is interrupted the notes already added stay.",
+    "Add notes to any number of issues. " +
+    "Pass `text` for one shared note, or `notes` to give every issue its own text - " +
+    "which is what a mass close needs, since the reason an issue was closed differs per issue. " +
+    `The batch is split into requests of ${BULK_MAX_ISSUES} automatically. ` +
+    "Returns per-issue ok/error plus counts - check error_count. " +
+    "NOT atomic: if the run is interrupted the notes already added stay.",
     {
-      issueIds: z.array(z.number()).max(BULK_MAX_ISSUES).describe(`Issue IDs, max ${BULK_MAX_ISSUES} per call`),
-      text: z.string().describe("Note text, added verbatim to every issue"),
+      issueIds: z.array(z.number()).optional().describe(
+        "Issue IDs for one shared note. Use with `text`; ignored when `notes` is given."
+      ),
+      text: z.string().optional().describe("Note text, added verbatim to every issue in issueIds"),
+      notes: z.array(z.object({
+        id: z.number().describe("Issue ID"),
+        text: z.string().describe("Note text for this issue alone"),
+      })).optional().describe(
+        "A note per issue. Use this instead of issueIds+text when the text differs per issue."
+      ),
       view_state: z.enum(['public', 'private']).optional().default("public").describe("Visibility"),
-      suppressNotifications: z.boolean().optional().default(false).describe(
-        "Do not send e-mail for these notes. Recommended for large batches."
+      suppressNotifications: z.boolean().describe(
+        "Required. false mails every reporter, handler and monitor of every issue - " +
+        "several thousand e-mails on a batch of a few hundred."
+      ),
+      tag: z.string().optional().describe(
+        "Tag to attach to every issue touched. Created if it does not exist."
+      ),
+      dryRun: z.boolean().optional().default(false).describe(
+        "Report what would be written and write nothing."
       ),
     },
     async (params) => {
       return withMantisConfigured("bulk_add_note", async () => {
+        const opts = {
+          suppressNotifications: params.suppressNotifications,
+          tag: params.tag,
+          dryRun: params.dryRun,
+        };
+
+        if (params.notes?.length) {
+          const result = await mantisApi.bulkAddNote(
+            params.notes.map((n) => ({ ...n, view_state: params.view_state })),
+            null,
+            opts
+          );
+          return JSON.stringify(result, null, 2);
+        }
+
+        if (!params.issueIds?.length || !params.text) {
+          throw new Error("Pass either `notes`, or both `issueIds` and `text`.");
+        }
+
         const result = await mantisApi.bulkAddNote(
           params.issueIds,
-          {
-            text: params.text,
-            view_state: { name: params.view_state },
-          },
-          params.suppressNotifications
+          { text: params.text, view_state: { name: params.view_state } },
+          opts
         );
         return JSON.stringify(result, null, 2);
       });

@@ -125,6 +125,17 @@ export interface BulkResult {
   results: Array<{ id: number; status: string; [key: string]: any }>;
   ok_count: number;
   error_count: number;
+  /** Set when the batch was split across several requests. */
+  chunks?: number;
+  /** Set when the server only reported what it would have done. */
+  dry_run?: boolean;
+  /** Dry-run preview: what the batch resolved to. */
+  issue_count?: number;
+  ids?: number[];
+  suppress_notifications?: boolean;
+  tag?: string | null;
+  patch?: any;
+  notes?: Array<{ id: number; text_length: number }>;
 }
 
 export interface User {
@@ -478,37 +489,148 @@ export class MantisApi {
     return response.data;
   }
 
-  // Apply the same field update to many issues in one request
-  async bulkUpdateIssues(ids: number[], issue: any, suppressNotifications = false): Promise<BulkResult> {
+  // Apply the same field update to many issues, chunked to the server's limit
+  async bulkUpdateIssues(
+    ids: number[],
+    issue: any,
+    opts: BulkOptions = {}
+  ): Promise<BulkResult> {
     log.info('Bulk updating issues', {
       count: ids.length,
       fields: Object.keys(issue || {}),
-      suppressNotifications,
+      ...opts,
     });
-    const response = await this.api.patch('/issues/bulk', {
-      ids,
-      issue,
-      suppress_notifications: suppressNotifications,
-    });
-    this.clearCache();
-    return response.data;
+    return this.runChunked(ids, opts, (chunk) =>
+      this.api.patch('/issues/bulk', {
+        ids: chunk,
+        issue,
+        ...bulkBodyOptions(opts),
+      })
+    );
   }
 
-  // Add the same note to many issues in one request
-  async bulkAddNote(ids: number[], note: any, suppressNotifications = false): Promise<BulkResult> {
+  // Add a note to many issues. One shared text, or one text per issue.
+  async bulkAddNote(
+    entries: number[] | BulkNoteEntry[],
+    note: any,
+    opts: BulkOptions = {}
+  ): Promise<BulkResult> {
+    const perIssue = entries.length > 0 && typeof entries[0] !== 'number';
     log.info('Bulk adding note', {
-      count: ids.length,
+      count: entries.length,
+      perIssue,
       textLength: typeof note?.text === 'string' ? note.text.length : 0,
-      suppressNotifications,
+      ...opts,
     });
-    const response = await this.api.post('/issues/bulk/notes', {
-      ids,
-      note,
-      suppress_notifications: suppressNotifications,
-    });
-    this.clearCache();
-    return response.data;
+
+    if (!perIssue) {
+      return this.runChunked(entries as number[], opts, (chunk) =>
+        this.api.post('/issues/bulk/notes', {
+          ids: chunk,
+          note,
+          ...bulkBodyOptions(opts),
+        })
+      );
+    }
+
+    return this.runChunked(entries as BulkNoteEntry[], opts, (chunk) =>
+      this.api.post('/issues/bulk/notes', {
+        issues: chunk.map((e) => ({
+          id: e.id,
+          note: { text: e.text, view_state: { name: e.view_state ?? 'public' } },
+        })),
+        ...bulkBodyOptions(opts),
+      })
+    );
   }
+
+  /**
+   * Split a batch into server-sized chunks and merge the responses.
+   *
+   * The REST endpoint caps a request at BULK_CHUNK issues. Making the caller do
+   * that arithmetic is how a 600-issue job turns into a wrong loop, so the
+   * splitting lives here and the merged result reads like a single call.
+   *
+   * A chunk that fails outright (network, 500) is recorded as an error entry per
+   * issue rather than thrown, so one bad chunk cannot hide the work that did land.
+   */
+  private async runChunked<T extends number | BulkNoteEntry>(
+    items: T[],
+    opts: BulkOptions,
+    send: (chunk: T[]) => Promise<{ data: BulkResult }>
+  ): Promise<BulkResult> {
+    const merged: BulkResult = { results: [], ok_count: 0, error_count: 0 };
+    const chunkCount = Math.ceil(items.length / BULK_CHUNK);
+
+    for (let i = 0; i < items.length; i += BULK_CHUNK) {
+      const chunk = items.slice(i, i + BULK_CHUNK);
+      try {
+        const { data } = await send(chunk);
+        if (data.dry_run) {
+          // A dry run answers with a description of the work, not with results.
+          // Merging only the counters would throw away the very thing the caller
+          // asked for, so the preview is accumulated instead.
+          merged.dry_run = true;
+          merged.issue_count = (merged.issue_count ?? 0) + (data.issue_count ?? 0);
+          merged.ids = [...(merged.ids ?? []), ...(data.ids ?? [])];
+          merged.suppress_notifications = data.suppress_notifications;
+          merged.tag = data.tag;
+          if (data.patch !== undefined) {
+            merged.patch = data.patch;
+          }
+          if (data.notes) {
+            merged.notes = [...(merged.notes ?? []), ...data.notes];
+          }
+          continue;
+        }
+        merged.results.push(...(data.results ?? []));
+        merged.ok_count += data.ok_count ?? 0;
+        merged.error_count += data.error_count ?? 0;
+      } catch (err: any) {
+        const message = err?.response?.data?.message ?? err?.message ?? 'request failed';
+        for (const item of chunk) {
+          const id = typeof item === 'number' ? item : item.id;
+          merged.results.push({ id, status: 'error', message });
+          merged.error_count++;
+        }
+      }
+    }
+
+    if (chunkCount > 1) {
+      merged.chunks = chunkCount;
+    }
+    this.clearCache();
+    return merged;
+  }
+}
+
+/** Maximum issues the REST endpoint accepts in one bulk request. */
+const BULK_CHUNK = 100;
+
+export interface BulkOptions {
+  suppressNotifications?: boolean;
+  tag?: string;
+  dryRun?: boolean;
+}
+
+export interface BulkNoteEntry {
+  id: number;
+  text: string;
+  view_state?: 'public' | 'private';
+}
+
+/** Map the camelCase options onto the snake_case fields the REST API expects. */
+function bulkBodyOptions(opts: BulkOptions): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    suppress_notifications: opts.suppressNotifications ?? false,
+  };
+  if (opts.tag) {
+    body.tag = opts.tag;
+  }
+  if (opts.dryRun) {
+    body.dry_run = true;
+  }
+  return body;
 }
 
 // Create singleton instance
