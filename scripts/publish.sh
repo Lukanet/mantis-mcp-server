@@ -53,6 +53,17 @@ git fetch --quiet --tags origin "$BRANCH"
 [ -z "$(git rev-list HEAD..origin/"$BRANCH")" ] || die "origin/$BRANCH има къмити, които липсват локално - направи git pull"
 ok "в синхрон с origin/$BRANCH"
 
+# CI инсталира с `npm ci`, което работи само с lockfile от repo-то и в синхрон
+# с package.json. Без тази проверка грешката излиза чак в CI (така се провали 0.6.0).
+git ls-files --error-unmatch package-lock.json >/dev/null 2>&1 \
+  || die "package-lock.json не е в git - npm ci в CI няма да тръгне"
+npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null
+if ! git diff --quiet -- package-lock.json; then
+  git checkout -- package-lock.json
+  die "package-lock.json не съответства на package.json - пусни npm install и къмитни lockfile-а"
+fi
+ok "package-lock.json е в git и съответства на package.json"
+
 # ------------------------------------------------------------------ версия
 step "Версия"
 
@@ -139,7 +150,7 @@ if [ "$RETRY" -eq 0 ]; then
     const text = fs.readFileSync("CHANGELOG.md", "utf8");
     fs.writeFileSync("CHANGELOG.md", text.replace(/^## \[Unreleased\]$/m, `## [Unreleased]\n\n## [${process.argv[1]}] - ${process.argv[2]}`));
   ' "$VERSION" "$TODAY"
-  git add package.json CHANGELOG.md
+  git add package.json package-lock.json CHANGELOG.md
   git commit --quiet -m "Release $VERSION"
   git tag -a "v$VERSION" -m "Release $VERSION"
   ok "къмит и таг v$VERSION"
