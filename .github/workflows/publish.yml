@@ -13,15 +13,10 @@ name: Publish to npm
 # then on they can only stage a publish for a human to approve with 2FA.
 # This workflow is the path that keeps working.
 
+# Started only by the tag scripts/publish.sh pushes - that script is the one way to release.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Build and pack only, do not publish'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -53,7 +48,6 @@ jobs:
       # The tag drives the release, so package.json has to agree with it -
       # otherwise a mistyped tag publishes a version nobody expects.
       - name: Check the tag matches package.json
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
@@ -67,5 +61,4 @@ jobs:
         run: npm pack --dry-run
 
       - name: Publish
-        if: github.event_name == 'push' || inputs.dry_run == false
         run: npm publish --access public

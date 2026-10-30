@@ -12,6 +12,12 @@
 - `upload_issue_attachment` attaches files to an issue, from local paths or inline
   (text or base64), optionally together with a note so the files sit under the note
   that explains them.
+- `bulk_add_note` accepts `notes`, a text per issue, next to the existing shared
+  `text`. A mass close carries a different reason on every issue; a shared note
+  throws exactly that away.
+- `tag` on both bulk tools attaches one tag to every issue touched, so a sweep can
+  be reviewed - or undone - with a single filter instead of a search through note texts.
+- `dryRun` on both bulk tools reports what would happen and writes nothing.
 
 ### Changed
 - `priority` and `severity` on `create_issue`, `update_issue` and `bulk_update_issues`
@@ -21,18 +27,6 @@
 - Tool descriptions point to each other where an agent would otherwise guess: where
   attachments are read and added, that `categoryId` must not be left out, that a new
   `description` replaces the old one, that a change is explained with a note.
-
-## [0.6.0] - 2026-09-21
-
-### Added
-- `bulk_add_note` accepts `notes`, a text per issue, next to the existing shared
-  `text`. A mass close carries a different reason on every issue; a shared note
-  throws exactly that away.
-- `tag` on both bulk tools attaches one tag to every issue touched, so a sweep can
-  be reviewed - or undone - with a single filter instead of a search through note texts.
-- `dryRun` on both bulk tools reports what would happen and writes nothing.
-
-### Changed
 - Both bulk tools now accept any number of ids and split the batch into requests of
   100 themselves. The caller no longer does that arithmetic.
 - `suppressNotifications` is now required rather than defaulting to false. Left off,

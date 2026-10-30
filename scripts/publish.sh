@@ -1,164 +1,140 @@
 #!/usr/bin/env bash
 #
-# Publish @lukanet/mantis-mcp-server to the public npm registry.
+# Release @lukanet/mantis-mcp-server. This is the only way to publish.
 #
-#   bash scripts/publish.sh                  # pre-flight checks + pack preview, publishes nothing
-#   bash scripts/publish.sh --bump minor     # bump the version first, then preview
-#   bash scripts/publish.sh --publish        # actually publish the current version
+#   bash scripts/publish.sh patch|minor|major
 #
-# Publishing is irreversible: a version number can never be reused, and
-# `npm unpublish` only works within 72 hours. Nothing is sent to the registry
-# unless --publish is passed explicitly.
+# The next version is computed from the version currently on npm, never from
+# package.json, so a number cannot be skipped. The script moves the
+# [Unreleased] section of CHANGELOG.md under that version, commits, tags and
+# pushes. The tag starts .github/workflows/publish.yml, which publishes over
+# trusted publishing (OIDC) - no npm token exists anywhere. The script then
+# waits until the version shows up on npm.
+#
+# Nothing is changed before you confirm by typing the version back.
 #
 set -euo pipefail
 
 REGISTRY="https://registry.npmjs.org/"
-EXPECTED_BRANCH="main"
-
-BUMP=""
-DO_PUBLISH=0
-ALLOW_DIRTY=0
-ALLOW_ANY_BRANCH=0
-NO_GIT_TAG=0
+BRANCH_EXPECTED="main"
+ACTIONS_URL="https://github.com/Lukanet/mantis-mcp-server/actions/workflows/publish.yml"
+WAIT_SECONDS=600
 
 die()  { printf '\n  ГРЕШКА: %s\n\n' "$1" >&2; exit 1; }
 ok()   { printf '  \033[32mok\033[0m    %s\n' "$1"; }
-warn() { printf '  \033[33mвним\033[0m  %s\n' "$1"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
-  cat <<'EOF'
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
-Опции:
-  --bump <patch|minor|major>  Вдига версията (npm version) преди проверките.
-  --publish                   Публикува. Без този флаг скриптът само проверява.
-  --no-git-tag                При --bump не прави git комит и таг.
-  --allow-dirty               Разрешава незакомитнати промени.
-  --allow-any-branch          Разрешава клон, различен от main.
-  -h, --help                  Тази помощ.
-EOF
-  exit 0
-}
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --bump)            BUMP="${2:-}"; shift 2 ;;
-    --publish)         DO_PUBLISH=1; shift ;;
-    --no-git-tag)      NO_GIT_TAG=1; shift ;;
-    --allow-dirty)     ALLOW_DIRTY=1; shift ;;
-    --allow-any-branch) ALLOW_ANY_BRANCH=1; shift ;;
-    -h|--help)         usage ;;
-    *)                 die "непознат аргумент: $1 (виж --help)" ;;
-  esac
-done
+case "${1:-}" in
+  patch|minor|major) BUMP="$1" ;;
+  -h|--help)         usage 0 ;;
+  *)                 usage 1 ;;
+esac
 
 cd "$(dirname "$0")/.."
-command -v jq >/dev/null || die "нужен е jq"
-
-PKG_NAME=$(jq -r .name package.json)
+PKG_NAME=$(node -p "require('./package.json').name")
 
 # ---------------------------------------------------------------- проверки
-step "Проверки преди публикуване"
+step "Проверки"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$BRANCH" != "$EXPECTED_BRANCH" ] && [ "$ALLOW_ANY_BRANCH" -eq 0 ]; then
-  die "клонът е '$BRANCH', а не '$EXPECTED_BRANCH' (--allow-any-branch за да продължиш)"
-fi
+[ "$BRANCH" = "$BRANCH_EXPECTED" ] || die "клонът е '$BRANCH', публикува се само от '$BRANCH_EXPECTED'"
 ok "клон: $BRANCH"
 
-if [ -n "$(git status --porcelain)" ] && [ "$ALLOW_DIRTY" -eq 0 ]; then
+if [ -n "$(git status --porcelain)" ]; then
   git status --short | sed 's/^/        /'
-  die "работното дърво не е чисто — публикувай само комитнато състояние (--allow-dirty за да пренебрегнеш)"
+  die "има некомитнати промени - публикува се само комитнато състояние"
 fi
 ok "работното дърво е чисто"
 
-if ! NPM_USER=$(npm whoami --registry="$REGISTRY" 2>/dev/null); then
-  die "не си логнат в npm — пусни: npm login --registry=$REGISTRY"
+git fetch --quiet --tags origin "$BRANCH"
+[ -z "$(git rev-list HEAD..origin/"$BRANCH")" ] || die "origin/$BRANCH има къмити, които липсват локално - направи git pull"
+ok "в синхрон с origin/$BRANCH"
+
+# ------------------------------------------------------------------ версия
+step "Версия"
+
+PUBLISHED=$(npm view "$PKG_NAME" version --registry="$REGISTRY" 2>/dev/null) \
+  || die "не мога да прочета публикуваната версия от npm"
+VERSION=$(node -e '
+  const [major, minor, patch] = process.argv[1].split(".").map(Number);
+  const next = { major: [major + 1, 0, 0], minor: [major, minor + 1, 0], patch: [major, minor, patch + 1] };
+  console.log(next[process.argv[2]].join("."));
+' "$PUBLISHED" "$BUMP")
+ok "в npm:  $PUBLISHED"
+ok "нова:   $VERSION ($BUMP)"
+
+if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+  die "таг v$VERSION вече съществува, но версията не е в npm - вероятно CI не е успял.
+  Виж $ACTIONS_URL, оправи причината и пусни отново провалилия се run (Re-run jobs)."
 fi
-ok "npm потребител: $NPM_USER"
+ok "таг v$VERSION е свободен"
 
-# ------------------------------------------------------------------- bump
-if [ -n "$BUMP" ]; then
-  case "$BUMP" in
-    patch|minor|major) ;;
-    *) die "--bump приема patch, minor или major (подадено: $BUMP)" ;;
-  esac
-  step "Вдигане на версията ($BUMP)"
-  if [ "$NO_GIT_TAG" -eq 1 ]; then
-    npm version "$BUMP" --no-git-tag-version >/dev/null
-    ok "версията е вдигната (без git комит и таг)"
-  else
-    npm version "$BUMP" >/dev/null
-    ok "версията е вдигната, направен е git комит и таг"
-  fi
-fi
+# ---------------------------------------------------------------- changelog
+grep -q '^## \[Unreleased\]' CHANGELOG.md || die "в CHANGELOG.md няма секция '## [Unreleased]' - опиши промените там"
+grep -q "^## \[$VERSION\]" CHANGELOG.md && die "CHANGELOG.md вече има секция [$VERSION]"
+UNRELEASED=$(awk '/^## \[Unreleased\]/{on=1; next} /^## \[/{on=0} on' CHANGELOG.md)
+[ -n "$(printf '%s' "$UNRELEASED" | tr -d '[:space:]')" ] || die "секцията [Unreleased] в CHANGELOG.md е празна"
+ok "CHANGELOG.md има описание на промените"
 
-VERSION=$(jq -r .version package.json)
-
-# ------------------------------------------------- версията свободна ли е
-step "Състояние в регистъра"
-PUBLISHED_LATEST=$(npm view "$PKG_NAME" version --registry="$REGISTRY" 2>/dev/null || echo "-")
-ok "в npm сега: $PUBLISHED_LATEST"
-ok "локално:    $VERSION"
-
-if npm view "$PKG_NAME@$VERSION" version --registry="$REGISTRY" >/dev/null 2>&1; then
-  die "версия $VERSION вече е публикувана — вдигни номера (--bump patch|minor|major)"
-fi
-ok "версия $VERSION е свободна"
-
-# ------------------------------------------------------------------ билд
-# npm publish НЕ билдва сам (няма prepublishOnly), затова билдваме тук —
-# иначе в пакета отива старият dist/ с новия номер на версията.
-step "Билд"
+# ------------------------------------------------------------------- билд
+# Същото ще направи и CI; тук е, за да се хване счупен билд преди тага.
+step "Билд и съдържание на пакета"
 rm -rf dist
 npm run build >/dev/null
 [ -f dist/index.js ] || die "билдът не създаде dist/index.js"
 ok "dist/ е прекомпилиран от нулата"
 
-# --------------------------------------------------------------- преглед
-step "Какво ще влезе в пакета"
 TARBALL=$(npm pack --silent)
-tar tzf "$TARBALL" | sed 's/^/        /'
-SIZE=$(du -h "$TARBALL" | cut -f1)
-ok "$TARBALL ($SIZE)"
-
-# Дребна проверка да не изтекат тайни през грешно настроен "files".
-if tar tzf "$TARBALL" | grep -qE '(^|/)(\.env|\.npmrc|\.mcp\.json|logs/)'; then
-  rm -f "$TARBALL"
-  die "в пакета влизат файлове, които не бива да са публични — провери 'files' в package.json"
+FILES=$(tar tzf "$TARBALL")
+rm -f "$TARBALL"
+printf '%s\n' "$FILES" | sed 's/^/        /'
+if printf '%s\n' "$FILES" | grep -qE '(^|/)(\.env|\.npmrc|\.mcp\.json|logs/)'; then
+  die "в пакета влизат файлове, които не бива да са публични - провери 'files' в package.json"
 fi
 ok "няма .env / .npmrc / .mcp.json / logs в пакета"
 
-# ------------------------------------------------------------ публикуване
-if [ "$DO_PUBLISH" -eq 0 ]; then
-  rm -f "$TARBALL"
-  step "Нищо не е публикувано"
-  cat <<EOF
-  Проверките минаха. За да публикуваш $PKG_NAME@$VERSION:
-
-      bash scripts/publish.sh --publish
-
-  След това не забравяй: git push && git push --tags
-EOF
-  exit 0
-fi
-
-step "Публикуване на $PKG_NAME@$VERSION"
-printf '  Това е необратимо. Напиши "%s" за потвърждение: ' "$VERSION"
+# ------------------------------------------------------------ потвърждение
+step "Промени в $VERSION"
+printf '%s\n' "$UNRELEASED" | sed 's/^/    /'
+printf '\n  Публикуването е необратимо. Напиши "%s" за потвърждение: ' "$VERSION"
 read -r CONFIRM
-[ "$CONFIRM" = "$VERSION" ] || { rm -f "$TARBALL"; die "прекратено"; }
+[ "$CONFIRM" = "$VERSION" ] || die "прекратено, нищо не е променено"
 
-npm publish "$TARBALL" --access public --registry="$REGISTRY"
-rm -f "$TARBALL"
+# ----------------------------------------------------------------- release
+step "Release $VERSION"
+npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
+TODAY=$(date +%Y-%m-%d)
+node -e '
+  const fs = require("fs");
+  const text = fs.readFileSync("CHANGELOG.md", "utf8");
+  fs.writeFileSync("CHANGELOG.md", text.replace(/^## \[Unreleased\]$/m, `## [Unreleased]\n\n## [${process.argv[1]}] - ${process.argv[2]}`));
+' "$VERSION" "$TODAY"
+git add package.json CHANGELOG.md
+git commit --quiet -m "Release $VERSION"
+git tag -a "v$VERSION" -m "Release $VERSION"
+ok "къмит и таг v$VERSION"
 
+# --atomic: или и клонът, и тагът стигат до GitHub, или нищо.
+git push --quiet --atomic origin "$BRANCH" "v$VERSION"
+ok "изпратено в GitHub - CI публикува"
+
+# ------------------------------------------------------------------ чакане
+step "Чакам $PKG_NAME@$VERSION да се появи в npm"
+DEADLINE=$((SECONDS + WAIT_SECONDS))
+until npm view "$PKG_NAME@$VERSION" version --registry="$REGISTRY" >/dev/null 2>&1; do
+  if [ "$SECONDS" -ge "$DEADLINE" ]; then
+    die "след $((WAIT_SECONDS / 60)) минути версията още я няма в npm. Виж $ACTIONS_URL
+  Тагът е изпратен; след като оправиш причината, пусни отново провалилия се run."
+  fi
+  printf '.'
+  sleep 15
+done
+printf '\n'
 ok "публикувано: $PKG_NAME@$VERSION"
 cat <<EOF
 
-  Остава:
-      git push && git push --tags
-      npx -y $PKG_NAME@$VERSION --help   # проверка, че се вдига от регистъра
-
-  Клиентите, които ползват пакета през npx, ще вземат новата версия при
-  следващо стартиране; вече пуснатите процеси трябва да се рестартират.
+  Клиентите, които ползват пакета през npx, вземат новата версия при следващо
+  стартиране; вече пуснатите MCP процеси трябва да се рестартират.
 EOF

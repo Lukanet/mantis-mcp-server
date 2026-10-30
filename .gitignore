@@ -139,3 +139,6 @@ package-lock.json
 
 # npm credentials - never commit
 .npmrc
+
+# Serena (local code-intelligence cache)
+.serena/
