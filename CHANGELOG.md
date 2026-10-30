@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
 ### Added
 - `list_issue_attachments` lists an issue's files, including the ones uploaded with a
   note, without dragging along every note and the history the way `get_issue_by_id` does.
