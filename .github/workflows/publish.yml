@@ -28,14 +28,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24 ships npm 11, which supports trusted publishing.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # npm 11.5.1 or newer is required for trusted publishing.
-      - name: Ensure a recent npm
-        run: npm install -g npm@latest
+      # Check rather than `npm install -g npm@latest`: npm 12 dropped Node 20 and
+      # broke the 0.6.0 release that way. Whatever npm the runner brings has to
+      # be new enough, and if it is not, say so plainly.
+      - name: Check npm supports trusted publishing
+        run: |
+          node -e '
+            const [maj, min, pat] = process.argv[1].split(".").map(Number);
+            const ok = maj > 11 || (maj === 11 && (min > 5 || (min === 5 && pat >= 1)));
+            if (!ok) { console.error(`npm ${process.argv[1]} is too old, trusted publishing needs 11.5.1+`); process.exit(1); }
+            console.log(`npm ${process.argv[1]}`);
+          ' "$(npm --version)"
 
       - run: npm ci
 

@@ -18,6 +18,7 @@ set -euo pipefail
 REGISTRY="https://registry.npmjs.org/"
 BRANCH_EXPECTED="main"
 ACTIONS_URL="https://github.com/Lukanet/mantis-mcp-server/actions/workflows/publish.yml"
+RUNS_API="https://api.github.com/repos/Lukanet/mantis-mcp-server/actions/workflows/publish.yml/runs"
 WAIT_SECONDS=600
 
 die()  { printf '\n  ГРЕШКА: %s\n\n' "$1" >&2; exit 1; }
@@ -65,19 +66,6 @@ VERSION=$(node -e '
 ok "в npm:  $PUBLISHED"
 ok "нова:   $VERSION ($BUMP)"
 
-if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-  die "таг v$VERSION вече съществува, но версията не е в npm - вероятно CI не е успял.
-  Виж $ACTIONS_URL, оправи причината и пусни отново провалилия се run (Re-run jobs)."
-fi
-ok "таг v$VERSION е свободен"
-
-# ---------------------------------------------------------------- changelog
-grep -q '^## \[Unreleased\]' CHANGELOG.md || die "в CHANGELOG.md няма секция '## [Unreleased]' - опиши промените там"
-grep -q "^## \[$VERSION\]" CHANGELOG.md && die "CHANGELOG.md вече има секция [$VERSION]"
-UNRELEASED=$(awk '/^## \[Unreleased\]/{on=1; next} /^## \[/{on=0} on' CHANGELOG.md)
-[ -n "$(printf '%s' "$UNRELEASED" | tr -d '[:space:]')" ] || die "секцията [Unreleased] в CHANGELOG.md е празна"
-ok "CHANGELOG.md има описание на промените"
-
 # ------------------------------------------------------------------- билд
 # Същото ще направи и CI; тук е, за да се хване счупен билд преди тага.
 step "Билд и съдържание на пакета"
@@ -95,38 +83,101 @@ if printf '%s\n' "$FILES" | grep -qE '(^|/)(\.env|\.npmrc|\.mcp\.json|logs/)'; t
 fi
 ok "няма .env / .npmrc / .mcp.json / logs в пакета"
 
-# ------------------------------------------------------------ потвърждение
-step "Промени в $VERSION"
-printf '%s\n' "$UNRELEASED" | sed 's/^/    /'
-printf '\n  Публикуването е необратимо. Напиши "%s" за потвърждение: ' "$VERSION"
-read -r CONFIRM
-[ "$CONFIRM" = "$VERSION" ] || die "прекратено, нищо не е променено"
+# Таг без версия в npm значи, че предишният опит е стигнал до GitHub, но CI не
+# е публикувал. "Re-run" в GitHub не помага, ако грешката е в самия workflow -
+# той се пуска от тагнатия къмит. Затова тагът се мести на HEAD (с поправката)
+# и се изпраща наново; номерът остава същият, защото в npm нищо не е заето.
+if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+  PKG_VERSION=$(node -p "require('./package.json').version")
+  [ "$PKG_VERSION" = "$VERSION" ] \
+    || die "таг v$VERSION съществува, но package.json е $PKG_VERSION - не знам как се е стигнало дотук, оправи ръчно"
+  git merge-base --is-ancestor "v$VERSION" HEAD \
+    || die "таг v$VERSION не е предшественик на HEAD - оправи ръчно"
+  step "Повторен опит за $VERSION"
+  ok "таг v$VERSION е изпратен, но $VERSION не е в npm - предишният CI run не е публикувал"
+  ok "тагът ще бъде преместен от $(git rev-parse --short "v$VERSION^{commit}") на $(git rev-parse --short HEAD) и CI ще тръгне наново"
+  if [ "$(git rev-parse "v$VERSION^{commit}")" = "$(git rev-parse HEAD)" ]; then
+    ok "(HEAD е същият къмит - полезно само ако причината е била извън repo-то, напр. настройка в npmjs.com)"
+  fi
+  printf '\n  Напиши "%s" за потвърждение: ' "$VERSION"
+  read -r CONFIRM
+  [ "$CONFIRM" = "$VERSION" ] || die "прекратено, нищо не е променено"
+  PUSHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  git push --quiet origin "$BRANCH"
+  git push --quiet origin ":refs/tags/v$VERSION"
+  git tag -f -a "v$VERSION" -m "Release $VERSION" >/dev/null
+  git push --quiet origin "v$VERSION"
+  ok "тагът v$VERSION е преместен и изпратен - CI публикува"
+  RETRY=1
+else
+  RETRY=0
+  ok "таг v$VERSION е свободен"
+fi
 
-# ----------------------------------------------------------------- release
-step "Release $VERSION"
-npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
-TODAY=$(date +%Y-%m-%d)
-node -e '
-  const fs = require("fs");
-  const text = fs.readFileSync("CHANGELOG.md", "utf8");
-  fs.writeFileSync("CHANGELOG.md", text.replace(/^## \[Unreleased\]$/m, `## [Unreleased]\n\n## [${process.argv[1]}] - ${process.argv[2]}`));
-' "$VERSION" "$TODAY"
-git add package.json CHANGELOG.md
-git commit --quiet -m "Release $VERSION"
-git tag -a "v$VERSION" -m "Release $VERSION"
-ok "къмит и таг v$VERSION"
+if [ "$RETRY" -eq 0 ]; then
 
-# --atomic: или и клонът, и тагът стигат до GitHub, или нищо.
-git push --quiet --atomic origin "$BRANCH" "v$VERSION"
-ok "изпратено в GitHub - CI публикува"
+  # ---------------------------------------------------------------- changelog
+  grep -q '^## \[Unreleased\]' CHANGELOG.md || die "в CHANGELOG.md няма секция '## [Unreleased]' - опиши промените там"
+  grep -q "^## \[$VERSION\]" CHANGELOG.md && die "CHANGELOG.md вече има секция [$VERSION]"
+  UNRELEASED=$(awk '/^## \[Unreleased\]/{on=1; next} /^## \[/{on=0} on' CHANGELOG.md)
+  [ -n "$(printf '%s' "$UNRELEASED" | tr -d '[:space:]')" ] || die "секцията [Unreleased] в CHANGELOG.md е празна"
+  ok "CHANGELOG.md има описание на промените"
+
+  # ------------------------------------------------------------ потвърждение
+  step "Промени в $VERSION"
+  printf '%s\n' "$UNRELEASED" | sed 's/^/    /'
+  printf '\n  Публикуването е необратимо. Напиши "%s" за потвърждение: ' "$VERSION"
+  read -r CONFIRM
+  [ "$CONFIRM" = "$VERSION" ] || die "прекратено, нищо не е променено"
+
+  # ----------------------------------------------------------------- release
+  step "Release $VERSION"
+  npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
+  TODAY=$(date +%Y-%m-%d)
+  node -e '
+    const fs = require("fs");
+    const text = fs.readFileSync("CHANGELOG.md", "utf8");
+    fs.writeFileSync("CHANGELOG.md", text.replace(/^## \[Unreleased\]$/m, `## [Unreleased]\n\n## [${process.argv[1]}] - ${process.argv[2]}`));
+  ' "$VERSION" "$TODAY"
+  git add package.json CHANGELOG.md
+  git commit --quiet -m "Release $VERSION"
+  git tag -a "v$VERSION" -m "Release $VERSION"
+  ok "къмит и таг v$VERSION"
+
+  # --atomic: или и клонът, и тагът стигат до GitHub, или нищо.
+  PUSHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  git push --quiet --atomic origin "$BRANCH" "v$VERSION"
+  ok "изпратено в GitHub - CI публикува"
+
+fi
 
 # ------------------------------------------------------------------ чакане
+# Статусът на CI се чете от публичния GitHub API (без вход), за да се спре
+# веднага при провал, вместо да се чака до изтичане на времето.
+ci_conclusion() {
+  curl -fsS "$RUNS_API?event=push&branch=v$VERSION&per_page=1" 2>/dev/null | node -e '
+    let d = ""; process.stdin.on("data", c => d += c).on("end", () => {
+      try {
+        const run = JSON.parse(d).workflow_runs?.[0];
+        if (run && new Date(run.created_at) >= new Date(process.argv[1]))
+          console.log(`${run.status} ${run.conclusion ?? ""} ${run.html_url}`);
+      } catch {}
+    });
+  ' "$PUSHED_AT"
+}
+
 step "Чакам $PKG_NAME@$VERSION да се появи в npm"
 DEADLINE=$((SECONDS + WAIT_SECONDS))
 until npm view "$PKG_NAME@$VERSION" version --registry="$REGISTRY" >/dev/null 2>&1; do
+  read -r CI_STATUS CI_CONCLUSION CI_URL <<<"$(ci_conclusion)" || true
+  if [ "${CI_STATUS:-}" = "completed" ] && [ "${CI_CONCLUSION:-}" != "success" ]; then
+    printf '\n'
+    die "CI завърши с '$CI_CONCLUSION': $CI_URL
+  Нищо не е публикувано. Оправи причината, къмитни и пусни скрипта отново със
+  същия аргумент - той ще премести тага v$VERSION и ще опита пак."
+  fi
   if [ "$SECONDS" -ge "$DEADLINE" ]; then
-    die "след $((WAIT_SECONDS / 60)) минути версията още я няма в npm. Виж $ACTIONS_URL
-  Тагът е изпратен; след като оправиш причината, пусни отново провалилия се run."
+    die "след $((WAIT_SECONDS / 60)) минути версията още я няма в npm. Виж $ACTIONS_URL"
   fi
   printf '.'
   sleep 15

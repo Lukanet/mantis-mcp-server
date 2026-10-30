@@ -361,9 +361,15 @@ What it does:
    trusted publishing (OIDC) - there is no npm token anywhere. The script
    waits until the version appears on npm.
 
-If CI fails, the tag is already pushed but nothing is published. Fix the cause
-and re-run the failed job on the Actions page; running the script again
-reports exactly that instead of picking a new number.
+While waiting, the script watches the workflow run through the public GitHub
+API and stops as soon as it fails, with a link to the run.
+
+If CI fails, nothing is published and the version number is still free. Fix
+the cause, commit, and run the script again with the same argument: it sees
+the tag without a matching npm version, moves the tag to the current commit
+and pushes it, which starts a fresh run. Re-running the old job on GitHub
+would not help when the fault is in the workflow itself - it runs from the
+tagged commit.
 
 One-time setup on npmjs.com: package -> Settings -> Trusted publishers ->
 GitHub Actions, repository `Lukanet/mantis-mcp-server`, workflow `publish.yml`.
