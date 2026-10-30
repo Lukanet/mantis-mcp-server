@@ -1,5 +1,27 @@
 # 更新日誌
 
+## [Unreleased]
+
+### Added
+- `list_issue_attachments` lists an issue's files, including the ones uploaded with a
+  note, without dragging along every note and the history the way `get_issue_by_id` does.
+- `get_issue_attachment` reads one file. Images come back as images the model can look
+  at, text files as text (UTF-8, falling back to windows-1251), and everything else -
+  pdf, zip, office documents - is saved under the system temp directory and its path
+  returned, since the server runs locally over stdio.
+- `upload_issue_attachment` attaches files to an issue, from local paths or inline
+  (text or base64), optionally together with a note so the files sit under the note
+  that explains them.
+
+### Changed
+- `priority` and `severity` on `create_issue`, `update_issue` and `bulk_update_issues`
+  accept only the tracker's names (`none`..`immediate`, `feature`..`block`), the same
+  way `status` already did, instead of passing an unknown name through.
+- `add_issue_note` `view_state` is restricted to `public` / `private`.
+- Tool descriptions point to each other where an agent would otherwise guess: where
+  attachments are read and added, that `categoryId` must not be left out, that a new
+  `description` replaces the old one, that a change is explained with a note.
+
 ## [0.6.0] - 2026-09-21
 
 ### Added

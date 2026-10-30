@@ -220,6 +220,36 @@ Get Mantis issue details by ID.
 **Parameters:**
 - `issueId`: Issue ID
 
+### 2a. List issue attachments (list_issue_attachments)
+
+List the files attached to an issue, including those uploaded with a note. Metadata only.
+
+**Parameters:**
+- `issueId`: Issue ID
+
+### 2b. Get issue attachment (get_issue_attachment)
+
+Read one attached file. Images (png, jpeg, gif, webp up to 5 MB) are returned inline as images,
+text files as text, anything else is saved to disk (default `<tmpdir>/mantis-attachments`) and the path is returned.
+
+**Parameters:**
+- `issueId`: Issue ID
+- `fileId`: Attachment ID from `list_issue_attachments`
+- `save` (optional, default false): Save to disk even for images and text
+- `saveDir` (optional): Directory to save into
+- `maxChars` (optional, default 50000): Truncate text files longer than this
+
+### 2c. Upload issue attachment (upload_issue_attachment)
+
+Attach files to an issue, optionally with a note so the files are shown under it.
+
+**Parameters:**
+- `issueId`: Issue ID
+- `filePaths` (optional): Absolute paths of local files
+- `files` (optional): Inline files `{name, content, base64?}`
+- `note` (optional): Note text to add together with the files
+- `view_state` (optional, default public): Note visibility
+
 ### 3. Get user (get_user)
 
 Get Mantis user by username.

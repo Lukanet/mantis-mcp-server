@@ -1,10 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { isMantisConfigured } from "./config/index.js";
 import mantisApi, { MantisApiError, User } from "./services/mantisApi.js";
 import { log } from "./utils/logger.js";
 import { gzip } from 'zlib';
 import { promisify } from 'util';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 const gzipAsync = promisify(gzip);
 
@@ -28,11 +32,40 @@ const RESOLUTION_NAMES = [
   'duplicate', 'not a bug', 'suspended', 'wont fix',
 ] as const;
 
+const PRIORITY_NAMES = ['none', 'low', 'normal', 'high', 'urgent', 'immediate'] as const;
+
+const SEVERITY_NAMES = [
+  'feature', 'trivial', 'text', 'tweak', 'minor', 'major', 'crash', 'block',
+] as const;
+
 // Max number of issues the REST bulk endpoints accept in one request.
 const BULK_MAX_ISSUES = 100;
 
 // Compression threshold in bytes
 const COMPRESSION_THRESHOLD = 1024 * 100; // 100KB
+
+// Images up to this size are returned inline; bigger ones are saved to disk.
+// Matches the per-image limit of the Claude API.
+const INLINE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+const TEXT_CONTENT_TYPES = [
+  'application/json', 'application/xml', 'application/javascript', 'application/sql',
+  'application/x-sh', 'application/x-httpd-php', 'application/x-yaml', 'application/csv',
+];
+
+const TEXT_EXTENSIONS = [
+  'txt', 'log', 'csv', 'tsv', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'php', 'py',
+  'sql', 'sh', 'ini', 'conf', 'cfg', 'yml', 'yaml', 'md', 'diff', 'patch', 'eml',
+];
+
+const DEFAULT_ATTACHMENT_DIR = path.join(os.tmpdir(), 'mantis-attachments');
+
+// Returned from a tool action to hand the client content blocks other than plain text, e.g. images.
+class ToolContent {
+  constructor(public readonly blocks: CallToolResult["content"]) {}
+}
 
 // Log data type
 interface LogData {
@@ -45,16 +78,7 @@ interface LogData {
 async function withMantisConfigured<T>(
   toolName: string,
   action: () => Promise<T>
-): Promise<{
-  [x: string]: unknown;
-  content: Array<{
-    [x: string]: unknown;
-    type: "text";
-    text: string;
-  }>;
-  _meta?: { [key: string]: unknown } | undefined;
-  isError?: boolean | undefined;
-}> {
+): Promise<CallToolResult> {
   try {
     // Check if Mantis API is configured
     if (!isMantisConfigured()) {
@@ -78,6 +102,9 @@ async function withMantisConfigured<T>(
 
     // Execute tool logic
     const result = await action();
+    if (result instanceof ToolContent) {
+      return { content: result.blocks };
+    }
     return {
       content: [
         {
@@ -134,6 +161,63 @@ async function compressJsonData(data: any): Promise<string> {
   return compressed.toString('base64');
 }
 
+function isTextFile(contentType: string, filename: string): boolean {
+  const type = contentType.split(';')[0].trim().toLowerCase();
+  if (type.startsWith('text/') || TEXT_CONTENT_TYPES.includes(type)) {
+    return true;
+  }
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  return TEXT_EXTENSIONS.includes(ext);
+}
+
+// Text attachments on a Bulgarian tracker are often windows-1251 rather than UTF-8.
+function decodeText(data: Buffer): { text: string; encoding: string } {
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(data), encoding: 'utf-8' };
+  } catch {
+    return { text: new TextDecoder('windows-1251').decode(data), encoding: 'windows-1251' };
+  }
+}
+
+async function saveAttachment(
+  dir: string,
+  issueId: number,
+  fileId: number,
+  filename: string,
+  data: Buffer
+): Promise<string> {
+  // The name comes from whoever uploaded the file, so strip anything that could leave `dir`.
+  const safeName = path.basename(filename).replace(/[^\p{L}\p{N}._-]+/gu, '_') || 'file';
+  const target = path.join(path.resolve(dir), `${issueId}-${fileId}-${safeName}`);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, data);
+  return target;
+}
+
+// Every attachment of an issue, including the ones uploaded together with a note.
+function collectAttachments(response: any): any[] {
+  // GET /issues/{id} answers with {"issues":[...]}.
+  const issue = response?.issues?.[0] ?? response;
+  const byId = new Map<number, any>();
+  for (const file of issue?.attachments ?? []) {
+    byId.set(file.id, { ...file, note_id: null });
+  }
+  for (const note of issue?.notes ?? []) {
+    for (const file of note?.attachments ?? []) {
+      byId.set(file.id, { ...byId.get(file.id), ...file, note_id: note.id });
+    }
+  }
+  return [...byId.values()].map((file) => ({
+    id: file.id,
+    filename: file.filename,
+    size: file.size,
+    content_type: file.content_type,
+    created_at: file.created_at,
+    reporter: file.reporter?.name,
+    note_id: file.note_id,
+  }));
+}
+
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "Mantis MCP Server",
@@ -152,7 +236,7 @@ export function createServer(): McpServer {
     "Workflow for large result sets: countOnly first to size the query, then idsOnly, then fetch details. " +
     "Returns total_count and page_count next to issues, plus warnings if the server ignored a parameter. " +
     "CANNOT: create or link issues, add notes, read or search attachment contents, or filter by custom fields " +
-    "or tags - use create_issue / add_issue_relationship / get_issue_by_id for those.",
+    "or tags - use create_issue / add_issue_relationship / get_issue_by_id / get_issue_attachment for those.",
     {
       projectId: z.number().optional().describe("Project ID. Omit to search every project the token can see."),
       statusId: z.union([z.number(), z.string()]).optional().describe(
@@ -280,8 +364,9 @@ export function createServer(): McpServer {
   // Get issue details by ID
   server.tool(
     "get_issue_by_id",
-    "Get one issue in full: all fields, every note, attachment metadata and relationships. " +
+    "Get one issue in full: all fields, every note, attachment metadata, relationships, monitors and history. " +
     "This is the only tool that shows an issue's relationships and note ids. " +
+    "For attachments alone use list_issue_attachments; to read a file's content use get_issue_attachment. " +
     "COST: proportional to the issue's history - a long-lived issue with many notes can exceed 100 KB, " +
     "so do not loop it over a list. For a few fields across many issues use get_issues with select.",
     {
@@ -291,6 +376,154 @@ export function createServer(): McpServer {
       return withMantisConfigured("get_issue_by_id", async () => {
         const issue = await mantisApi.getIssueById(issueId);
         return JSON.stringify(issue, null, 2);
+      });
+    }
+  );
+
+  // List an issue's attachments
+  server.tool(
+    "list_issue_attachments",
+    "List the files attached to an issue - id, name, size, type, who uploaded it and, when it came with a note, " +
+    "the note id. Metadata only, no content: pass the id to get_issue_attachment to read a file. " +
+    "Much smaller than get_issue_by_id when all you need is the attachments. To add files use upload_issue_attachment.",
+    {
+      issueId: z.number().describe("Issue ID"),
+    },
+    async ({ issueId }) => {
+      return withMantisConfigured("list_issue_attachments", async () => {
+        const issue = await mantisApi.getIssueById(issueId);
+        const attachments = collectAttachments(issue);
+        return JSON.stringify({ issue_id: issueId, count: attachments.length, attachments }, null, 2);
+      });
+    }
+  );
+
+  // Read one attachment
+  server.tool(
+    "get_issue_attachment",
+    "Read one attached file. Images (png, jpeg, gif, webp, up to 5 MB) come back as an image you can look at; " +
+    "text files (logs, csv, json, sql, ...) come back as text; anything else (pdf, office documents, archives) " +
+    "is saved to a local directory and the path is returned - open it from there. " +
+    "Get the file id from list_issue_attachments. " +
+    "COST: downloads the whole file, which can be several MB; a long log is cut at maxChars.",
+    {
+      issueId: z.number().describe("Issue ID"),
+      fileId: z.number().describe("Attachment ID from list_issue_attachments"),
+      save: z.boolean().optional().default(false).describe(
+        "Save the file to disk even when it is an image or text, e.g. to keep it or hand it to another tool."
+      ),
+      saveDir: z.string().optional().describe(
+        `Directory to save into. Default ${DEFAULT_ATTACHMENT_DIR}.`
+      ),
+      maxChars: z.number().optional().default(50000).describe(
+        "Text files longer than this are truncated. Use save to get the whole file."
+      ),
+    },
+    async (params) => {
+      return withMantisConfigured("get_issue_attachment", async () => {
+        const file = await mantisApi.getIssueFile(params.issueId, params.fileId);
+        const data = Buffer.from(file.content ?? '', 'base64');
+        const contentType = (file.content_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+        const info = {
+          issue_id: params.issueId,
+          file_id: file.id,
+          filename: file.filename,
+          content_type: contentType,
+          size: data.length,
+        };
+
+        const isImage = INLINE_IMAGE_TYPES.includes(contentType) && data.length <= INLINE_IMAGE_MAX_BYTES;
+        const isText = !isImage && isTextFile(contentType, file.filename);
+
+        if (params.save || (!isImage && !isText)) {
+          const savedTo = await saveAttachment(
+            params.saveDir ?? DEFAULT_ATTACHMENT_DIR, params.issueId, file.id, file.filename, data
+          );
+          return JSON.stringify({ ...info, saved_to: savedTo }, null, 2);
+        }
+
+        if (isImage) {
+          return new ToolContent([
+            { type: "text", text: JSON.stringify(info, null, 2) },
+            { type: "image", data: data.toString('base64'), mimeType: contentType },
+          ]);
+        }
+
+        const { text, encoding } = decodeText(data);
+        const truncated = text.length > params.maxChars;
+        return new ToolContent([
+          {
+            type: "text",
+            text: JSON.stringify({
+              ...info,
+              encoding,
+              chars: text.length,
+              truncated,
+              ...(truncated && { hint: "Pass save: true to get the whole file on disk." }),
+            }, null, 2),
+          },
+          { type: "text", text: truncated ? text.slice(0, params.maxChars) : text },
+        ]);
+      });
+    }
+  );
+
+  // Upload attachments
+  server.tool(
+    "upload_issue_attachment",
+    "Attach one or more files to an existing issue. Files come either from local paths (filePaths - this " +
+    "server runs on the same machine as you, so any file you can write is reachable) or inline (files: " +
+    "text you produced, or base64 for binary). Pass `note` to upload them together with a note, so the " +
+    "files are shown under that note and the reader knows why they were added - prefer this over a bare upload. " +
+    "Returns the uploaded names and sizes, plus the note id when a note was added. " +
+    "Rejected by the tracker: files over its size limit (30 MB here) and disallowed types (svg). " +
+    "Attachments cannot be deleted through this server, so check the issue id first. " +
+    "To read existing attachments use list_issue_attachments / get_issue_attachment.",
+    {
+      issueId: z.number().describe("Issue ID"),
+      filePaths: z.array(z.string()).optional().describe(
+        "Absolute paths of local files to upload. The file name on the issue is the base name of the path."
+      ),
+      files: z.array(z.object({
+        name: z.string().describe("File name as it will appear on the issue, with extension, e.g. 'query.sql'"),
+        content: z.string().describe("File content: plain text, or base64 when base64 is true"),
+        base64: z.boolean().optional().default(false).describe("content is base64-encoded binary"),
+      })).optional().describe("Files given inline instead of from disk. Can be combined with filePaths."),
+      note: z.string().optional().describe(
+        "Note text to add together with the files. Without it the files are attached to the issue itself."
+      ),
+      view_state: z.enum(['public', 'private']).optional().default("public").describe(
+        "Visibility of the note. Only used with note."
+      ),
+    },
+    async (params) => {
+      return withMantisConfigured("upload_issue_attachment", async () => {
+        const uploads: Array<{ name: string; data: Buffer }> = [];
+        for (const filePath of params.filePaths ?? []) {
+          uploads.push({ name: path.basename(filePath), data: await readFile(filePath) });
+        }
+        for (const file of params.files ?? []) {
+          uploads.push({
+            name: file.name,
+            data: Buffer.from(file.content, file.base64 ? 'base64' : 'utf-8'),
+          });
+        }
+        if (!uploads.length) {
+          throw new Error("Pass at least one file in filePaths or files.");
+        }
+
+        const result = await mantisApi.uploadIssueFiles(
+          params.issueId,
+          uploads.map((u) => ({ name: u.name, content: u.data.toString('base64') })),
+          params.note ? { text: params.note, view_state: { name: params.view_state } } : undefined
+        );
+        return JSON.stringify({
+          ok: true,
+          issue_id: params.issueId,
+          ...(params.note && { note_id: result?.note?.id }),
+          files: uploads.map((u) => ({ name: u.name, size: u.data.length })),
+          hint: "Use list_issue_attachments for the new attachment ids.",
+        }, null, 2);
       });
     }
   );
@@ -334,7 +567,7 @@ export function createServer(): McpServer {
     "filter is applied after that download. It also silently truncates at 1000 issues, so on a big project " +
     "the numbers are a sample, not a total. For an exact total prefer get_issues with countOnly per group.",
     {
-      projectId: z.number().optional().describe("Project ID"),
+      projectId: z.number().optional().describe("Project ID. Omit for every project the token can see."),
       groupBy: z.enum(['status', 'priority', 'severity', 'handler', 'reporter']).describe("Group by"),
       period: z.enum(['all', 'today', 'week', 'month']).default('all').describe("Time range: all, today, week, month"),
     },
@@ -429,9 +662,11 @@ export function createServer(): McpServer {
     "COST: high - downloads up to 1000 full issues and then one request per distinct handler; truncates at " +
     "1000 issues, so treat it as a sample on large projects.",
     {
-      projectId: z.number().optional().describe("Project ID"),
+      projectId: z.number().optional().describe("Project ID. Omit for every project the token can see."),
       includeUnassigned: z.boolean().default(true).describe("Include unassigned issues"),
-      statusFilter: z.array(z.number()).optional().describe("Status filter: only count issues in these statuses"),
+      statusFilter: z.array(z.number()).optional().describe(
+        "Only count issues in these status IDs. " + STATUS_IDS
+      ),
     },
     async (params) => {
       return withMantisConfigured("get_assignment_statistics", async () => {
@@ -586,16 +821,21 @@ export function createServer(): McpServer {
   server.tool(
     "create_issue",
     "Create an issue. Returns only the new issue's id and summary - read it back with get_issue_by_id if you " +
-    "need the whole object. projectId and categoryId must come from get_projects; a wrong category is rejected.",
+    "need the whole object. projectId and categoryId must come from get_projects; a wrong category is rejected. " +
+    "Files cannot be passed here: create the issue, then attach them with upload_issue_attachment. " +
+    "Before creating, check with search_issues that the same problem is not already reported.",
     {
-      summary: z.string().describe("Issue summary"),
+      summary: z.string().describe("Issue summary - the one-line title"),
       description: z.string().describe("Issue description"),
-      projectId: z.number().describe("Project ID"),
-      categoryId: z.number().optional().describe("Category ID"),
-      handlerId: z.number().optional().describe("Handler ID"),
-      priority: z.string().optional().describe("Priority"),
-      severity: z.string().optional().describe("Severity"),
-      additional_information: z.string().optional().describe("Additional information"),
+      projectId: z.number().describe("Project ID from get_projects"),
+      categoryId: z.number().optional().describe(
+        "Category ID from get_projects, belonging to projectId. Pass it: when omitted, category 1 is used, " +
+        "which may not exist in the project."
+      ),
+      handlerId: z.number().optional().describe("Assignee user ID - get it from get_users_by_project_id"),
+      priority: z.enum(PRIORITY_NAMES).optional().describe("Priority name. Tracker default when omitted."),
+      severity: z.enum(SEVERITY_NAMES).optional().describe("Severity name. Tracker default when omitted."),
+      additional_information: z.string().optional().describe("Additional information field"),
     },
     async (params) => {
       return withMantisConfigured("create_issue", async () => {
@@ -628,16 +868,17 @@ export function createServer(): McpServer {
     "Change fields on one issue. Only the parameters you pass are touched. " +
     "Returns a short confirmation (id, status, which fields changed), not the issue - fetch it with " +
     "get_issue_by_id if you need the full object. " +
+    "To explain a change (e.g. why it is closed) add a note with add_issue_note - this tool cannot. " +
     "For the same change across many issues use bulk_update_issues instead of looping. " + STATUS_IDS,
     {
       issueId: z.number().describe("Issue ID"),
-      summary: z.string().optional().describe("Issue summary"),
-      description: z.string().optional().describe("Issue description"),
-      handlerId: z.number().optional().describe("Handler ID"),
+      summary: z.string().optional().describe("New summary (title)"),
+      description: z.string().optional().describe("New description. Replaces the old text entirely - to add information, prefer add_issue_note."),
+      handlerId: z.number().optional().describe("New assignee user ID - get it from get_users_by_project_id"),
       status: z.enum(STATUS_NAMES).optional().describe("New status name"),
       resolution: z.enum(RESOLUTION_NAMES).optional().describe("New resolution name"),
-      priority: z.string().optional().describe("Priority"),
-      severity: z.string().optional().describe("Severity"),
+      priority: z.enum(PRIORITY_NAMES).optional().describe("New priority name"),
+      severity: z.enum(SEVERITY_NAMES).optional().describe("New severity name"),
     },
     async (params) => {
       return withMantisConfigured("update_issue", async () => {
@@ -671,11 +912,14 @@ export function createServer(): McpServer {
     "add_issue_note",
     "Append a note (comment) to an issue. Returns a short confirmation (note id, issue id, visibility), not the " +
     "issue - the full issue with all its notes is only available via get_issue_by_id. " +
-    "Notes cannot be edited or deleted through this server. For the same note on many issues use bulk_add_note.",
+    "Notes cannot be edited or deleted through this server. For the same note on many issues use bulk_add_note. " +
+    "For a note with files attached use upload_issue_attachment with its note parameter.",
     {
       issueId: z.number().describe("Issue ID"),
       text: z.string().describe("Note text"),
-      view_state: z.string().optional().default("public").describe("Visibility (public or private)"),
+      view_state: z.enum(['public', 'private']).optional().default("public").describe(
+        "Visibility. private notes are seen only by developers and above, not by the reporter."
+      ),
     },
     async (params) => {
       return withMantisConfigured("add_issue_note", async () => {
@@ -765,8 +1009,8 @@ export function createServer(): McpServer {
       status: z.enum(STATUS_NAMES).optional().describe("New status name, e.g. 'closed'"),
       resolution: z.enum(RESOLUTION_NAMES).optional().describe("New resolution name, e.g. 'fixed'"),
       handlerId: z.number().optional().describe("New handler user ID"),
-      priority: z.string().optional().describe("New priority name"),
-      severity: z.string().optional().describe("New severity name"),
+      priority: z.enum(PRIORITY_NAMES).optional().describe("New priority name"),
+      severity: z.enum(SEVERITY_NAMES).optional().describe("New severity name"),
       suppressNotifications: z.boolean().describe(
         "Required. false mails every reporter, handler and monitor of every issue - " +
         "several thousand e-mails on a batch of a few hundred. Use true unless the people " +

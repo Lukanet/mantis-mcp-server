@@ -138,6 +138,17 @@ export interface BulkResult {
   notes?: Array<{ id: number; text_length: number }>;
 }
 
+export interface IssueFile {
+  id: number;
+  filename: string;
+  size: number;
+  content_type: string;
+  created_at?: string;
+  reporter?: { id: number; name: string };
+  /** Base64. Only present when the file is fetched through /issues/{id}/files. */
+  content?: string;
+}
+
 export interface User {
   id: number;
   name: string;
@@ -389,6 +400,43 @@ export class MantisApi {
     return this.cachedRequest<Issue>(cacheKey, () => {
       return this.api.get(`/issues/${issueId}`);
     });
+  }
+
+  // Get one attachment with its content (base64). Not cached: files can be large.
+  async getIssueFile(issueId: number, fileId: number): Promise<IssueFile> {
+    log.info('Fetching issue attachment', { issueId, fileId });
+    const response = await this.api.get(`/issues/${issueId}/files/${fileId}`, {
+      // Attachments are bounded by the tracker's upload limit, not by our 30 s default.
+      timeout: 120000,
+      maxContentLength: Infinity,
+    });
+    // Older trackers ignore the file id and return every file of the issue.
+    const files: IssueFile[] = response.data?.files ?? [];
+    const file = files.find((f) => f.id === fileId);
+    if (!file) {
+      throw new MantisApiError(`Attachment ${fileId} not found on issue ${issueId}`, 404);
+    }
+    return file;
+  }
+
+  // Upload files to an issue, optionally as part of a new note so they show up under it.
+  async uploadIssueFiles(
+    issueId: number,
+    files: Array<{ name: string; content: string }>,
+    note?: { text: string; view_state: { name: string } }
+  ): Promise<any> {
+    log.info('Uploading issue attachments', {
+      issueId,
+      files: files.map((f) => f.name),
+      withNote: !!note,
+    });
+    // Base64 bodies easily pass axios' 10 MB default; the tracker enforces its own limit.
+    const options = { timeout: 120000, maxBodyLength: Infinity, maxContentLength: Infinity };
+    const response = note
+      ? await this.api.post(`/issues/${issueId}/notes`, { ...note, files }, options)
+      : await this.api.post(`/issues/${issueId}/files`, { files }, options);
+    this.clearCache(); // Cached issue still lists the old attachments
+    return response.data;
   }
 
   // Get current user info
