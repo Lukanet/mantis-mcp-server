@@ -177,12 +177,44 @@ ci_conclusion() {
   ' "$PUSHED_AT"
 }
 
+# Грешките от провалилите се стъпки на run-а, прочетени от анотациите му -
+# те са публични, за разлика от лога на стъпката.
+ci_errors() {
+  local run_url="$1" api="${RUNS_API%/actions/*}"
+  local run_id="${run_url##*/}"
+  curl -fsS "$api/actions/runs/$run_id/jobs" 2>/dev/null | node -e '
+    let d = ""; process.stdin.on("data", c => d += c).on("end", () => {
+      try {
+        for (const job of JSON.parse(d).jobs ?? []) {
+          for (const s of job.steps ?? []) if (s.conclusion === "failure") console.log(`STEP ${s.name}`);
+          console.log(`JOB ${job.id}`);
+        }
+      } catch {}
+    });
+  ' | while read -r kind value; do
+    if [ "$kind" = "STEP" ]; then
+      printf '  провалена стъпка: %s\n' "$value"
+    else
+      curl -fsS "$api/check-runs/$value/annotations" 2>/dev/null | node -e '
+        let d = ""; process.stdin.on("data", c => d += c).on("end", () => {
+          try {
+            for (const a of JSON.parse(d))
+              if (a.annotation_level === "failure" && !/^Process completed with exit code/.test(a.message))
+                console.log(`    ${a.message}`);
+          } catch {}
+        });
+      '
+    fi
+  done
+}
+
 step "Чакам $PKG_NAME@$VERSION да се появи в npm"
 DEADLINE=$((SECONDS + WAIT_SECONDS))
 until npm view "$PKG_NAME@$VERSION" version --registry="$REGISTRY" >/dev/null 2>&1; do
   read -r CI_STATUS CI_CONCLUSION CI_URL <<<"$(ci_conclusion)" || true
   if [ "${CI_STATUS:-}" = "completed" ] && [ "${CI_CONCLUSION:-}" != "success" ]; then
-    printf '\n'
+    printf '\n\n'
+    ci_errors "$CI_URL"
     die "CI завърши с '$CI_CONCLUSION': $CI_URL
   Нищо не е публикувано. Оправи причината, къмитни и пусни скрипта отново със
   същия аргумент - той ще премести тага v$VERSION и ще опита пак."

@@ -20,7 +20,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lukanet/mantis-mcp-server.git"
+    "url": "git+https://github.com/Lukanet/mantis-mcp-server.git"
   },
   "author": "Lukanet Dev Team",
   "license": "MIT",

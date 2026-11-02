@@ -69,5 +69,14 @@ jobs:
       - name: Show what would be published
         run: npm pack --dry-run
 
+      # The npm errors are repeated as annotations: they show on the run's summary
+      # page and can be read through the public API, unlike the step log.
       - name: Publish
-        run: npm publish --access public
+        run: |
+          set -o pipefail
+          npm publish --access public 2>&1 | tee publish.log || {
+            grep -E 'npm (error|ERR!)' publish.log | head -15 | while IFS= read -r line; do
+              echo "::error title=npm publish::$line"
+            done
+            exit 1
+          }
